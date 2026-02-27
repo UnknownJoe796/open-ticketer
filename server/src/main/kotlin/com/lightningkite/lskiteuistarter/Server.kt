@@ -17,6 +17,7 @@ import com.lightningkite.lightningserver.websockets.MultiplexWebSocketHandler
 import com.lightningkite.lightningserver.websockets.QueryParamWebSocketHandler
 import com.lightningkite.lskiteuistarter.UserAuth.RoleCache.userRole
 import com.lightningkite.lskiteuistarter.data.*
+import com.lightningkite.lskiteuistarter.tasks.StripeSyncTask
 import com.lightningkite.services.cache.Cache
 import com.lightningkite.services.cache.dynamodb.DynamoDbCache
 import com.lightningkite.services.database.Database
@@ -81,6 +82,17 @@ object Server : ServerBuilder() {
     val users = path.path("users") module UserEndpoints
     val authEndpoints = path.path("auth") module UserAuth
     val fcmTokens = path.path("fcmTokens") module FcmTokenEndpoints
+
+    // by Claude - Open Ticketer endpoints
+    val organizations = path.path("organizations") module OrganizationEndpoints
+    val memberships = path.path("memberships") module OrganizationMembershipEndpoints
+    val stripeConfig = path.path("stripe-config") module StripeConfigEndpoints
+    val purchases = path.path("purchases") module PurchaseEndpoints
+    val redemptions = path.path("redemptions") module TicketRedemptionEndpoints
+    val stripeWebhook = path.path("webhooks").path("stripe") module StripeWebhookEndpoint
+    val checkoutBridge = path.path("buy") module CheckoutBridgeEndpoint  // by Claude
+    val scanner = path module TicketScannerEndpoint
+    val stripeSyncTask = path module StripeSyncTask
 
     val multiplex = path.path("multiplex") bind MultiplexWebSocketHandler()
     val base = path bind QueryParamWebSocketHandler()

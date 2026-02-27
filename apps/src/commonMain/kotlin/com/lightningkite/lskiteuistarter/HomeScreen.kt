@@ -25,6 +25,17 @@ class HomePage : Page {
         col {
             centered.h2("Welcome to your home page")
 
+            // by Claude - Quick actions for Open Ticketer
+            card.col {
+                h3("Open Ticketer")
+                text("Manage ticket sales and check-ins")
+                separator()
+                important.buttonTheme.button {
+                    centered.text("Organizations")
+                    onClick { pageNavigator.navigate(OrganizationsPage()) }
+                }
+            }
+
             expanding.space()
 
             important.buttonTheme.button {

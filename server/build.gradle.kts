@@ -40,6 +40,11 @@ dependencies {
     implementation(libs.services.files.s3)
     implementation(libs.kotliner.cli)
 
+    // by Claude - Open Ticketer dependencies
+    implementation("com.stripe:stripe-java:26.0.0")
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:javase:3.5.3")
+
     ksp(libs.services.database.processor)
 
     api(libs.kotliner.cli)

@@ -42,6 +42,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 api(libs.kiteui)
+                api(libs.kiteui.camera)
                 api(libs.csvDurable)
                 api(libs.lightningServer.core.shared)
                 api(libs.lightningServer.typed.shared)
@@ -96,6 +97,7 @@ kotlin {
     compilerOptions {
         optIn.add("kotlin.time.ExperimentalTime")
         optIn.add("kotlin.uuid.ExperimentalUuidApi")
+        optIn.add("com.lightningkite.kiteui.ExperimentalKiteUi") // by Claude - for camera preview
         freeCompilerArgs.add("-Xcontext-parameters")
     }
 }

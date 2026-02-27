@@ -8,6 +8,7 @@ interface EmailContentBuilder {
     fun paragraph(text: String)
     fun buttonLink(text: String, href: String)
     fun code(text: String)
+    fun qrImage(base64Data: String) // by Claude - for ticket QR codes
 }
 
 fun HTML.emailBase(centralContent: EmailContentBuilder.() -> Unit) {
@@ -109,6 +110,15 @@ fun HTML.emailBase(centralContent: EmailContentBuilder.() -> Unit) {
                                             }
                                         }
                                     }
+                                }
+                            }
+
+                            // by Claude - QR code image display for tickets
+                            override fun qrImage(base64Data: String) = with(this@td) {
+                                img {
+                                    src = "data:image/png;base64,$base64Data"
+                                    alt = "Ticket QR Code"
+                                    style = "width: 300px; height: 300px; margin: 20px auto; display: block;"
                                 }
                             }
 

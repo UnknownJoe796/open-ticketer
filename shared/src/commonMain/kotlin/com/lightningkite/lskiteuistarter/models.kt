@@ -2,6 +2,7 @@ package com.lightningkite.lskiteuistarter
 
 import com.lightningkite.EmailAddress
 import com.lightningkite.services.data.*
+import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.database.HasId
 import kotlinx.datetime.*
 import kotlinx.serialization.Serializable
@@ -59,3 +60,73 @@ data class FcmToken(
     val lastRegisteredAt: Instant = created,
     val userAgent: String? = null,
 ) : HasId<String>
+
+// by Claude - Open Ticketer models
+
+@Serializable
+@GenerateDataClassPaths
+data class Organization(
+    override val _id: Uuid = Uuid.random(),
+    val name: String,
+    val domain: String? = null, // e.g. "example.com" — used to validate checkout redirect URLs // by Claude
+    @Index val created: Instant = Clock.System.now(),
+    val active: Boolean = true,
+) : HasId<Uuid>
+
+@Serializable
+@GenerateDataClassPaths
+data class OrganizationMembership(
+    override val _id: Uuid = Uuid.random(),
+    @Index @References(User::class) val userId: Uuid,
+    @Index @References(Organization::class) val organizationId: Uuid,
+    val role: OrgRole = OrgRole.Scanner,
+    val created: Instant = Clock.System.now(),
+) : HasId<Uuid>
+
+@Serializable
+enum class OrgRole {
+    Scanner,  // Can scan tickets
+    Admin,    // Can manage org, configure Stripe
+}
+
+@Serializable
+@GenerateDataClassPaths
+data class StripeConfig(
+    override val _id: Uuid = Uuid.random(),
+    @Index(unique = IndexUniqueness.Unique) @References(Organization::class) val organizationId: Uuid,
+    @MaxLength(500) val encryptedApiKey: String,
+    val webhookSecret: String,
+    val lastSyncedAt: Instant? = null,
+    val created: Instant = Clock.System.now(),
+) : HasId<Uuid>
+
+@Serializable
+@GenerateDataClassPaths
+data class Purchase(
+    override val _id: Uuid = Uuid.random(),
+    @Index(unique = IndexUniqueness.Unique) val stripeCheckoutSessionId: String,
+    @Index @References(Organization::class) val organizationId: Uuid,
+    val productId: String,
+    val productName: String,
+    val quantity: Int,
+    @Index val customerEmail: EmailAddress,
+    val customerName: String?,
+    val amountTotal: Long, // cents
+    val currency: String,
+    @Index val purchasedAt: Instant,
+    val qrCodeData: String? = null,  // JSON payload
+    val emailSent: Boolean = false,
+    val created: Instant = Clock.System.now(),
+) : HasId<Uuid>
+
+@Serializable
+@GenerateDataClassPaths
+data class TicketRedemption(
+    override val _id: Uuid = Uuid.random(),
+    @Index @References(Purchase::class) val purchaseId: Uuid,
+    val quantityRedeemed: Int,
+    @Index @References(User::class) val scannedByUserId: Uuid,
+    val scannedByName: String,
+    @Index val scannedAt: Instant = Clock.System.now(),
+    val notes: String? = null,
+) : HasId<Uuid>

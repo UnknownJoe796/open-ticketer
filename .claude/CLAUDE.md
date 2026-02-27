@@ -196,39 +196,39 @@ The project uses Firebase Cloud Messaging:
 
 ## Manual/Browser Testing
 
-The `testing/` directory contains scripts for AI-assisted browser testing. These use ports 8081 (backend) and 8951 (frontend) to avoid conflicts with other projects.
+The `testing/` directory contains scripts for browser testing. Ports are configured centrally in `testing/config.env` (default: 8081 backend, 8941 frontend).
 
 ### Quick Start
 
 ```bash
-# One command to start everything:
-./testing/prepare-browser-test.sh
+./testing/setup.sh              # Stop existing, start fresh
+./testing/setup.sh --rebuild    # Rebuild everything first
 ```
 
 ### Scripts
 
 ```bash
-./testing/start-all.sh        # Start backend + frontend
-./testing/start-backend.sh    # Start backend on :8081
-./testing/start-frontend.sh   # Start frontend on :8951
-./testing/stop-all.sh         # Stop all servers
-./testing/api.sh GET /path    # Make API calls
+./testing/setup.sh              # Main entry: stop → start all
+./testing/rebuild.sh frontend   # Rebuild frontend, restart Vite
+./testing/rebuild.sh server     # Rebuild server, restart backend
+./testing/stop.sh               # Stop all servers
+./testing/api.sh GET /path      # Make authenticated API calls
 ```
 
 ### Chrome Integration (Claude Code)
 
-After running `prepare-browser-test.sh`, use Claude's Chrome MCP tools:
+After `setup.sh`, use Chrome MCP tools:
 
 1. `mcp__claude-in-chrome__tabs_context_mcp(createIfEmpty=true)`
-2. `mcp__claude-in-chrome__navigate(tabId=..., url='http://localhost:8951')`
-3. Inject session token if available (see `testing/.admin-token`)
-4. `mcp__claude-in-chrome__computer(action='screenshot')` for visual verification
+2. `mcp__claude-in-chrome__navigate(tabId=..., url='http://localhost:8941')`
+3. Inject session: `localStorage.setItem('session', JSON.stringify({token: '<token>', backend: 'SameServer'})); location.reload();`
+4. `mcp__claude-in-chrome__computer(action='screenshot')` for verification
 
 ### Configuration
 
-- `testing/settings.testing.json` - Testing-specific settings (port 8081, debug mode)
-- `testing/.admin-token` - Admin session token (generated when debug mode enabled)
-- See `testing/README.md` for full documentation
+- `testing/config.env` - Central port configuration
+- `testing/settings.testing.json` - Server settings (debug mode enabled)
+- `testing/.admin-token` - Auto-generated admin token
 
 ## Important Notes
 
