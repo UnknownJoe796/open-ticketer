@@ -1,0 +1,28 @@
+{
+    "resource": {
+        "aws_cloudwatch_event_rule": {
+            "scheduled_task_stripesync": {
+                "name": "open-ticketer_stripesync",
+                "schedule_expression": "rate(30 minutes)"
+            },
+            "scheduled_task_uploadearlycleanupUploads": {
+                "name": "open-ticketer_uploadearlycleanupUploads",
+                "schedule_expression": "rate(1440 minutes)"
+            }
+        },
+        "aws_cloudwatch_event_target": {
+            "scheduled_task_stripesync": {
+                "input": "{\"scheduled\": \"/stripe-sync\"}",
+                "rule": "${aws_cloudwatch_event_rule.scheduled_task_stripesync.name}",
+                "target_id": "lambda",
+                "arn": "${aws_lambda_alias.main.arn}"
+            },
+            "scheduled_task_uploadearlycleanupUploads": {
+                "input": "{\"scheduled\": \"/upload-early/cleanupUploads\"}",
+                "rule": "${aws_cloudwatch_event_rule.scheduled_task_uploadearlycleanupUploads.name}",
+                "target_id": "lambda",
+                "arn": "${aws_lambda_alias.main.arn}"
+            }
+        }
+    }
+}

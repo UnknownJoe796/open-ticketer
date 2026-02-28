@@ -197,6 +197,10 @@ class OrganizationDetailsPage(val organizationId: Uuid) : Page {
                             onClick { pageNavigator.navigate(ScannerPage(organizationId)) }
                         }
                         button {
+                            text("Manage Events")
+                            onClick { pageNavigator.navigate(EventsListPage(organizationId)) }
+                        }
+                        button {
                             text("Configure Stripe")
                             onClick { pageNavigator.navigate(StripeConfigPage(organizationId)) }
                         }

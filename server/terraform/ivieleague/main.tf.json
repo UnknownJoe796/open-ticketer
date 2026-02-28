@@ -1,0 +1,37 @@
+{
+    "provider": {
+        "mongodbatlas": [
+            {}
+        ],
+        "aws": [
+            {
+                "region": "us-west-2"
+            },
+            {
+                "region": "us-east-1",
+                "alias": "acm"
+            }
+        ]
+    },
+    "terraform": {
+        "required_providers": {
+            "mongodbatlas": {
+                "source": "mongodb/mongodbatlas",
+                "version": "~> 2.4.0"
+            },
+            "aws": {
+                "source": "hashicorp/aws",
+                "version": "~> 6.28.0"
+            }
+        },
+        "required_version": "~> 1.0",
+        "backend": {
+            "s3": {
+                "bucket": "ivieleague-deployment-states",
+                "encrypt": true,
+                "region": "us-west-2",
+                "key": "open-ticketer"
+            }
+        }
+    }
+}

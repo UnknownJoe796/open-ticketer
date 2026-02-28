@@ -17,31 +17,13 @@ interface Api {
 	 * */
 	suspend fun exampleEndpoint(input: kotlin.Int): kotlin.Int
 
-	interface UploadEarlyEndpointApi {
-		/**
-		 * Upload File for Request
-		 * 
-		 * Upload a file to make a request later.  Times out in around 10 minutes.
-		 * 
-		 * **Auth Requirements:** No Requirements
-		 * */
-		suspend fun uploadFileForRequest(): com.lightningkite.lightningserver.files.UploadInformation
-		/**
-		 * Verify uploaded file
-		 * 
-		 * Checks out a file and moves it out of jail if it's safe.  Makes for significantly faster subsequent requests.
-		 * 
-		 * **Auth Requirements:** No Requirements
-		 * */
-		suspend fun verifyUploadedFile(input: kotlin.String): kotlin.String
-	}
-	val uploadEarlyEndpoint: UploadEarlyEndpointApi
+	val uploadEarlyEndpoint: com.lightningkite.lightningserver.files.ClientUploadEarlyEndpoints
 
 	val appRelease: com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lskiteuistarter.AppRelease, kotlin.uuid.Uuid>
 
 	val user: com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lskiteuistarter.User, kotlin.uuid.Uuid>
 
-	interface UserAuthApi : com.lightningkite.lightningserver.sessions.proofs.AuthClientEndpoints<com.lightningkite.lskiteuistarter.User, kotlin.uuid.Uuid>, com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lightningserver.sessions.Session<com.lightningkite.lskiteuistarter.User, kotlin.uuid.Uuid>, kotlin.uuid.Uuid> {
+	interface UserAuthApi : com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lightningserver.sessions.Session<com.lightningkite.lskiteuistarter.User, kotlin.uuid.Uuid>, kotlin.uuid.Uuid>, com.lightningkite.lightningserver.sessions.proofs.AuthClientEndpoints<com.lightningkite.lskiteuistarter.User, kotlin.uuid.Uuid> {
 
 		interface EmailApi : com.lightningkite.lightningserver.sessions.proofs.ProofClientEndpoints.Email {
 			/**
@@ -55,7 +37,7 @@ interface Api {
 		}
 		val email: EmailApi
 
-		interface TimeBasedOTPProof : com.lightningkite.lightningserver.sessions.proofs.ProofClientEndpoints.TimeBasedOTP, com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lightningserver.sessions.TotpSecret, kotlin.uuid.Uuid> {
+		interface TimeBasedOTPProof : com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lightningserver.sessions.TotpSecret, kotlin.uuid.Uuid>, com.lightningkite.lightningserver.sessions.proofs.ProofClientEndpoints.TimeBasedOTP {
 		}
 		val totp: TimeBasedOTPProof
 
@@ -117,6 +99,8 @@ interface Api {
 	}
 	val stripeConfig: StripeConfigApi
 
+	val eventWithTickets: com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lskiteuistarter.EventWithTickets, kotlin.String>
+
 	val purchase: com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lskiteuistarter.Purchase, kotlin.uuid.Uuid>
 
 	interface TicketRedemptionApi : com.lightningkite.lightningserver.typed.ClientModelRestEndpoints<com.lightningkite.lskiteuistarter.TicketRedemption, kotlin.uuid.Uuid> {
@@ -129,6 +113,14 @@ interface Api {
 	}
 	val ticketRedemption: TicketRedemptionApi
 
+	interface StripeWebhookEndpointApi {
+	}
+	val stripeWebhookEndpoint: StripeWebhookEndpointApi
+
+	interface CheckoutBridgeEndpointApi {
+	}
+	val checkoutBridgeEndpoint: CheckoutBridgeEndpointApi
+
 	interface TicketScannerEndpointApi {
 		/**
 		 * Verify QR code
@@ -138,6 +130,10 @@ interface Api {
 		suspend fun verifyQRCode(input: com.lightningkite.lskiteuistarter.data.VerifyQRInput): com.lightningkite.lskiteuistarter.data.VerifyQRResult
 	}
 	val ticketScannerEndpoint: TicketScannerEndpointApi
+
+	interface StripeSyncTaskApi {
+	}
+	val stripeSyncTask: StripeSyncTaskApi
 
 	interface MetaApi {
 		/**

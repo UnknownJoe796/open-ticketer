@@ -19,12 +19,12 @@ actual fun fcmSetup(): Unit {
     try {
         val firebaseAppOptions: dynamic = object {}
         // TODO: Replace with your own Firebase project information.
-        firebaseAppOptions["apiKey"] = "AIzaSyCL8CNiVYE-JoF3JxJffpgHjHV8wfMdqTY"
-        firebaseAppOptions["authDomain"] = "ls-kiteui-starter-project.firebaseapp.com"
-        firebaseAppOptions["projectId"] = "ls-kiteui-starter-project"
-        firebaseAppOptions["storageBucket"] = "ls-kiteui-starter-project.firebasestorage.app"
-        firebaseAppOptions["messagingSenderId"] = "763812266707"
-        firebaseAppOptions["appId"] = "1:763812266707:web:3ee91ef35b45b8e70c0a26"
+        firebaseAppOptions["apiKey"] = "TODO"
+        firebaseAppOptions["authDomain"] = "TODO"
+        firebaseAppOptions["projectId"] = "TODO"
+        firebaseAppOptions["storageBucket"] = "TODO"
+        firebaseAppOptions["messagingSenderId"] = "TODO"
+        firebaseAppOptions["appId"] = "TODO"
 
         val app = initializeApp(firebaseAppOptions.unsafeCast<FirebaseOptions>())
         val messaging = getMessaging(app)

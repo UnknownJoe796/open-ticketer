@@ -80,16 +80,28 @@ object StripeWebhookEndpoint : ServerBuilder() {
         }
 
         val lineItems = session.listLineItems()?.getData()
-        val productName = lineItems?.firstOrNull()?.getDescription() ?: "Unknown Product"
-        val quantity = lineItems?.firstOrNull()?.getQuantity()?.toInt() ?: 1
-        val productId = lineItems?.firstOrNull()?.getPrice()?.getProduct() ?: "unknown"
+        // by Claude - sum quantity across ALL line items (bin-packed orders may have multiple)
+        val quantity = lineItems?.sumOf { it.getQuantity()?.toInt() ?: 0 } ?: 1
+        val eventId = lineItems?.firstOrNull()?.getPrice()?.getProduct() ?: "unknown"
+
+        // by Claude - auto-upsert EventWithTickets if one doesn't exist for this product
+        val eventName = lineItems?.firstOrNull()?.getDescription() ?: "Unknown Event"
+        val existingEvent = Server.database().collection<EventWithTickets>().get(eventId)
+        if (existingEvent == null) {
+            Server.database().collection<EventWithTickets>().insertOne(
+                EventWithTickets(
+                    _id = eventId,
+                    organizationId = config.organizationId,
+                    name = eventName,
+                )
+            )
+        }
 
         // Create purchase record (triggers postCreate signal to send email)
         val purchase = Purchase(
             stripeCheckoutSessionId = sessionId,
             organizationId = config.organizationId,
-            productId = productId,
-            productName = productName,
+            eventId = eventId,
             quantity = quantity,
             customerEmail = session.getCustomerDetails()?.getEmail()?.toEmailAddress()
                 ?: throw IllegalArgumentException("No customer email in session"),

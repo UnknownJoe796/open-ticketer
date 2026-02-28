@@ -30,16 +30,16 @@ import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
 
 
-object LkEnv : TerraformAwsServerlessDomainBuilder<Server>(Server) {
-    override val displayName = "LS KiteUI Starter"
-    override val domain = "api.lskiteuistarter.cs.lightningkite.com"
-    override val domainZone = "cs.lightningkite.com"
-    override val terraformRoot: File = File("server/terraform/lk")
+object IvieleagueEnv : TerraformAwsServerlessDomainBuilder<Server>(Server) {
+    override val displayName = "Open Ticketer"
+    override val domain = "api.ticketer.ivieleague.com"
+    override val domainZone = "ivieleague.com"
+    override val terraformRoot: File = File("server/terraform/ivieleague")
 
     override val handler: KClass<out AwsAdapter> = AwsHandler::class
     override val timeout: Duration = 5.minutes
 
-    override val storageBucket = "lightningkite-terraform"
+    override val storageBucket = "ivieleague-deployment-states"
     override val storageBucketPath: String
         get() = super.storageBucketPath
     override val debug = true
@@ -47,16 +47,16 @@ object LkEnv : TerraformAwsServerlessDomainBuilder<Server>(Server) {
 
     override val region = Region.US_WEST_2!!
 
-    override val secretsSource: SecretSource = AwsSecretSource(projectPrefix, region)
+    override val secretsSource: SecretSource = AwsSecretSource("personal2", projectPrefix, region)
 
     override fun Server.settings() {
         require(TerraformProviderImport.mongodbAtlas)
         require(TerraformProvider(TerraformProviderImport.mongodbAtlas, null, JsonObject(emptyMap())))
-        println(this@LkEnv.terraformProviderImports)
-        println(this@LkEnv.terraformProviders)
+        println(this@IvieleagueEnv.terraformProviderImports)
+        println(this@IvieleagueEnv.terraformProviders)
 
         loggingSettings.direct(LoggingSettings())
-        database.mongodbAtlasFree(orgId = "6323a65c43d66b56a2ea5aea")
+        database.mongodbAtlasFree(orgId = "69a1f2aab520f69b87809ac0")
         awsSesDomain("email",emergencyContact)
         email.awsSesSmtp("email")
         files.awsS3Bucket(signedUrlDuration = 1.days)
@@ -71,19 +71,22 @@ object LkEnv : TerraformAwsServerlessDomainBuilder<Server>(Server) {
             exposedHeaders = listOf(),
         ))
         notifications.byVariable()
-        webUrl.direct("https://app.lskiteuistarter.cs.lightningkite.com")
+        webUrl.direct("https://ticketer.ivieleague.com")
     }
 }
 
-object DemoEnvDeploy {
+object IvieleagueEnvDeploy {
     @JvmStatic
-    fun main(vararg args: String) = LkEnv.deploy()
+    fun main(vararg args: String) {
+        ProcessBuilder("./gradlew", "server:lambda").inheritIO().start().waitFor()
+        IvieleagueEnv.deploy(autoApprove = true)
+    }
 }
-object DemoEnvEdit {
+object IvieleagueEnvEdit {
     @JvmStatic
-    fun main(vararg args: String) = LkEnv.editVars()
+    fun main(vararg args: String) = IvieleagueEnv.editVars()
 }
-object DemoEnvPrepare {
+object IvieleagueEnvPrepare {
     @JvmStatic
-    fun main(vararg args: String): Unit = LkEnv.prepareTerraform().let(::println)
+    fun main(vararg args: String): Unit = IvieleagueEnv.prepareTerraform().let(::println)
 }

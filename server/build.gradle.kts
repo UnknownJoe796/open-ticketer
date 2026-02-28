@@ -83,6 +83,28 @@ tasks.create("serve", JavaExec::class.java) {
     args("serve")
     workingDir(project.rootDir)
 }
+// by Claude - deployment tasks
+tasks.create("prepareTerraform", JavaExec::class.java) {
+    group = "deploy"
+    classpath(sourceSets.main.get().runtimeClasspath)
+    mainClass.set("com.lightningkite.lskiteuistarter.IvieleagueEnvPrepare")
+    workingDir(project.rootDir)
+}
+tasks.create("deploy", JavaExec::class.java) {
+    group = "deploy"
+    classpath(sourceSets.main.get().runtimeClasspath)
+    mainClass.set("com.lightningkite.lskiteuistarter.IvieleagueEnvDeploy")
+    workingDir(project.rootDir)
+    dependsOn("lambda")
+}
+tasks.create("editVars", JavaExec::class.java) {
+    group = "deploy"
+    classpath(sourceSets.main.get().runtimeClasspath)
+    mainClass.set("com.lightningkite.lskiteuistarter.IvieleagueEnvEdit")
+    workingDir(project.rootDir)
+    standardInput = System.`in`
+}
+
 tasks.create("lambda", Copy::class.java) {
     group = "deploy"
     this.destinationDir = project.buildDir.resolve("dist/lambda")

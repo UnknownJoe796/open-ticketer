@@ -1,9 +1,9 @@
-// by Claude - Stripe Checkout bridge endpoint: accepts a shareable URL with price-quantity pairs,
-// creates a Stripe Checkout Session, and redirects to Stripe's hosted checkout page.
-// This replaces Stripe Payment Links which don't support tiered/package pricing.
+// by Claude - Stripe Checkout bridge endpoint: takes an event ID and quantity,
+// fetches prices from Stripe, uses greedy bin-packing to optimize cost, and redirects to Stripe Checkout.
 package com.lightningkite.lskiteuistarter.data
 
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
+import com.lightningkite.lightningserver.definition.generalSettings
 import com.lightningkite.lightningserver.definition.secretBasis
 import com.lightningkite.lightningserver.encryption.cipher
 import com.lightningkite.lightningserver.http.*
@@ -14,62 +14,106 @@ import com.lightningkite.lskiteuistarter.*
 import com.lightningkite.services.database.*
 import com.stripe.Stripe
 import com.stripe.model.PaymentIntent
+import com.stripe.model.Price
 import com.stripe.model.checkout.Session
+import com.stripe.param.PriceListParams
 import com.stripe.param.checkout.SessionCreateParams
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.toList
 import kotlinx.html.*
-import kotlin.uuid.Uuid
 
-// by Claude - uses raw HttpHandler (no auth) because this is a public-facing redirect endpoint
+// by Claude - public-facing redirect endpoint (no auth)
 object CheckoutBridgeEndpoint : ServerBuilder() {
 
-    // by Claude - GET /buy?org={orgId}&price_abc123=4&success=/thanks&cancel=/shop&field_name=text:Name
+    // by Claude - GET /buy?event={eventId}&quantity=5[&success=/path&cancel=/path]
     val buy = path.get bind HttpHandler { request ->
-        // 1. Parse org parameter
-        val orgIdStr = request.queryParameters["org"]
-            ?: return@HttpHandler HttpResponse.plainText("Missing 'org' query parameter", HttpStatus.BadRequest)
-        val orgId = try {
-            Uuid.parse(orgIdStr)
-        } catch (e: IllegalArgumentException) {
-            return@HttpHandler HttpResponse.plainText("Invalid 'org' parameter: not a valid UUID", HttpStatus.BadRequest)
-        }
-
-        // 2. Parse price_* parameters into line items
-        val lineItems = request.queryParameters
-            .filter { (key, _) -> key.startsWith("price_") }
-            .map { (key, value) ->
-                val quantity = value.toLongOrNull()
-                if (quantity == null || quantity <= 0) {
-                    return@HttpHandler HttpResponse.plainText(
-                        "Invalid quantity for $key: must be a positive integer",
-                        HttpStatus.BadRequest
-                    )
-                }
-                key to quantity
-            }
-        if (lineItems.isEmpty()) {
+        // 1. Parse required parameters
+        val eventId = request.queryParameters["event"]
+            ?: return@HttpHandler HttpResponse.plainText("Missing 'event' query parameter", HttpStatus.BadRequest)
+        val quantityStr = request.queryParameters["quantity"]
+            ?: return@HttpHandler HttpResponse.plainText("Missing 'quantity' query parameter", HttpStatus.BadRequest)
+        val quantity = quantityStr.toIntOrNull()
+        if (quantity == null || quantity <= 0) {
             return@HttpHandler HttpResponse.plainText(
-                "No price_* query parameters found. Include at least one, e.g. ?price_abc123=2",
+                "Invalid 'quantity': must be a positive integer",
                 HttpStatus.BadRequest
             )
         }
 
-        // 3. Look up Organization (needed for domain-based redirects) and StripeConfig
-        val org = Server.database().collection<Organization>()
-            .get(orgId)
+        // 2. Look up EventWithTickets → org ID
+        val event = Server.database().collection<EventWithTickets>().get(eventId)
+            ?: return@HttpHandler HttpResponse.plainText("Event not found", HttpStatus.NotFound)
+
+        val org = Server.database().collection<Organization>().get(event.organizationId)
             ?: return@HttpHandler HttpResponse.plainText("Organization not found", HttpStatus.NotFound)
 
+        // 3. Get Stripe API key
         val config = Server.database().collection<StripeConfig>()
-            .find(condition { it.organizationId eq orgId }).firstOrNull()
+            .find(condition { it.organizationId eq event.organizationId }).firstOrNull()
             ?: return@HttpHandler HttpResponse.plainText(
-                "No Stripe configuration found for organization $orgId",
+                "No Stripe configuration found for this event's organization",
                 HttpStatus.NotFound
             )
         val cipher = secretBasis.cipher("stripe-keys").await()
         val decryptedBytes = cipher.decrypt(java.util.Base64.getDecoder().decode(config.encryptedApiKey))
         Stripe.apiKey = String(decryptedBytes)
 
-        // 4. Parse and validate redirect paths
+        // 4. Enforce ticket limit — sum existing purchases for this event
+        val existingPurchases = Server.database().collection<Purchase>()
+            .find(condition { it.eventId eq eventId }).toList()
+        val totalSold = existingPurchases.sumOf { it.quantity }
+        if (totalSold + quantity > event.ticketLimit) {
+            val remaining = event.ticketLimit - totalSold
+            return@HttpHandler HttpResponse.plainText(
+                "Ticket limit exceeded. Only $remaining ticket(s) remaining for this event.",
+                HttpStatus(409)
+            )
+        }
+
+        // 5. Fetch active Stripe prices for this product
+        val priceParams = PriceListParams.builder()
+            .setProduct(eventId)
+            .setActive(true)
+            .setLimit(100)
+            .build()
+        val prices = Price.list(priceParams).data
+        if (prices.isEmpty()) {
+            return@HttpHandler HttpResponse.plainText(
+                "No active prices found for this event in Stripe",
+                HttpStatus.NotFound
+            )
+        }
+
+        // 6. Build PriceOptions for bin-packing algorithm
+        // by Claude - We always do our own bin-packing. For transform_quantity prices,
+        // ticketCount = divide_by and we multiply the output quantity by divide_by
+        // so Stripe's division cancels out (e.g., pack of 4: output qty 4 → Stripe 4/4 = 1 group).
+        val priceOptions = prices.map { price ->
+            val divideBy = price.transformQuantity?.divideBy?.toInt()
+            if (divideBy != null && divideBy > 0) {
+                PriceOption(
+                    priceId = price.id,
+                    ticketCount = divideBy,
+                    unitAmountCents = price.unitAmount ?: 0,
+                    stripeQuantityMultiplier = divideBy,
+                )
+            } else {
+                val ticketCount = price.metadata?.get("ticket_count")?.toIntOrNull() ?: 1
+                PriceOption(price.id, ticketCount, price.unitAmount ?: 0)
+            }
+        }
+
+        // 7. Compute optimal line items via bin-packing
+        val lineItems = computeCheckoutLineItems(priceOptions, quantity)
+
+        if (lineItems.isEmpty()) {
+            return@HttpHandler HttpResponse.plainText(
+                "Could not determine pricing for $quantity ticket(s)",
+                HttpStatus.InternalServerError
+            )
+        }
+
+        // 8. Build redirect URLs
         val successParam = request.queryParameters["success"]
         val cancelParam = request.queryParameters["cancel"]
 
@@ -92,67 +136,41 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
             )
         }
 
-        val publicUrl = Server.webUrl()
+        val publicUrl = generalSettings().publicUrl
         val successUrl = if (successParam != null) {
             "https://${org.domain}$successParam" +
                 (if ("?" in successParam) "&" else "?") +
                 "session_id={CHECKOUT_SESSION_ID}"
         } else {
-            "$publicUrl/buy/receipt?org=$orgId&session_id={CHECKOUT_SESSION_ID}"
+            "$publicUrl/buy/receipt?event=$eventId&session_id={CHECKOUT_SESSION_ID}"
         }
         val cancelUrl = if (cancelParam != null) {
             "https://${org.domain}$cancelParam"
         } else {
-            // Reconstruct the current URL for cancel (return to same link to retry)
-            buildString {
-                append(publicUrl)
-                append("/buy?org=")
-                append(orgIdStr)
-                for ((priceId, qty) in lineItems) {
-                    append("&$priceId=$qty")
-                }
-            }
+            "$publicUrl/buy?event=$eventId&quantity=$quantity"
         }
 
-        // 5. Parse custom field_* parameters (max 3)
-        val fieldParams = request.queryParameters
-            .filter { (key, _) -> key.startsWith("field_") }
-        if (fieldParams.size > 3) {
-            return@HttpHandler HttpResponse.plainText("Maximum 3 custom fields allowed", HttpStatus.BadRequest)
-        }
-        val customFields = fieldParams.map { (key, value) ->
-            val fieldKey = key.removePrefix("field_")
-            parseCustomField(fieldKey, value)
-                ?: return@HttpHandler HttpResponse.plainText(
-                    "Invalid field format for '$key'. Expected TYPE[?]:LABEL[:OPT1,OPT2,...] " +
-                        "where TYPE is text, numeric, or dropdown",
-                    HttpStatus.BadRequest
-                )
-        }
-
-        // 6. Build Checkout Session
+        // 9. Create Stripe Checkout Session
         try {
             val params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setSuccessUrl(successUrl)
                 .setCancelUrl(cancelUrl)
+                .setAllowPromotionCodes(true)
                 .apply {
-                    for ((priceId, quantity) in lineItems) {
+                    for (item in lineItems) {
                         addLineItem(
                             SessionCreateParams.LineItem.builder()
-                                .setPrice(priceId)
-                                .setQuantity(quantity)
+                                .setPrice(item.priceId)
+                                .setQuantity(item.quantity)
                                 .build()
                         )
-                    }
-                    for (field in customFields) {
-                        addCustomField(field)
                     }
                 }
                 .build()
             val session = Session.create(params)
 
-            // 7. 303 redirect to Stripe Checkout
+            // 10. 303 redirect to Stripe Checkout
             HttpResponse(
                 status = HttpStatus.SeeOther,
                 headers = HttpHeaders(HttpHeader.Location to session.url),
@@ -165,81 +183,21 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
         }
     }
 
-    // by Claude - Parses "TYPE[?]:LABEL[:OPT1,OPT2,...]" into a Stripe CustomField.
-    // Returns null if the format is invalid.
-    private fun parseCustomField(key: String, value: String): SessionCreateParams.CustomField? {
-        val parts = value.split(":", limit = 3)
-        if (parts.size < 2) return null
-
-        val typeRaw = parts[0]
-        val optional = typeRaw.endsWith("?")
-        val typeName = typeRaw.removeSuffix("?").lowercase()
-        val label = parts[1].ifBlank { return null }
-        val options = if (parts.size == 3) parts[2].split(",").filter { it.isNotBlank() } else emptyList()
-
-        val type = when (typeName) {
-            "text" -> SessionCreateParams.CustomField.Type.TEXT
-            "numeric" -> SessionCreateParams.CustomField.Type.NUMERIC
-            "dropdown" -> SessionCreateParams.CustomField.Type.DROPDOWN
-            else -> return null
-        }
-
-        if (type == SessionCreateParams.CustomField.Type.DROPDOWN && options.isEmpty()) return null
-
-        return SessionCreateParams.CustomField.builder()
-            .setKey(key)
-            .setType(type)
-            .setLabel(
-                SessionCreateParams.CustomField.Label.builder()
-                    .setType(SessionCreateParams.CustomField.Label.Type.CUSTOM)
-                    .setCustom(label)
-                    .build()
-            )
-            .setOptional(optional)
-            .apply {
-                when (type) {
-                    SessionCreateParams.CustomField.Type.DROPDOWN -> setDropdown(
-                        SessionCreateParams.CustomField.Dropdown.builder()
-                            .apply {
-                                for (opt in options) {
-                                    addOption(
-                                        SessionCreateParams.CustomField.Dropdown.Option.builder()
-                                            .setLabel(opt)
-                                            .setValue(opt.lowercase().replace(" ", "_"))
-                                            .build()
-                                    )
-                                }
-                            }
-                            .build()
-                    )
-                    SessionCreateParams.CustomField.Type.TEXT -> setText(
-                        SessionCreateParams.CustomField.Text.builder().build()
-                    )
-                    SessionCreateParams.CustomField.Type.NUMERIC -> setNumeric(
-                        SessionCreateParams.CustomField.Numeric.builder().build()
-                    )
-                }
-            }
-            .build()
-    }
-
-    // GET /buy/receipt?org={orgId}&session_id=cs_xxx
+    // by Claude - GET /buy/receipt?event={eventId}&session_id=cs_xxx
     val receipt = path.path("receipt").get bind HttpHandler { request ->
-        val orgIdStr = request.queryParameters["org"]
-            ?: return@HttpHandler HttpResponse.plainText("Missing 'org' parameter", HttpStatus.BadRequest)
-        val orgId = try {
-            Uuid.parse(orgIdStr)
-        } catch (e: IllegalArgumentException) {
-            return@HttpHandler HttpResponse.plainText("Invalid 'org' parameter", HttpStatus.BadRequest)
-        }
+        val eventId = request.queryParameters["event"]
+            ?: return@HttpHandler HttpResponse.plainText("Missing 'event' parameter", HttpStatus.BadRequest)
         val sessionId = request.queryParameters["session_id"]
             ?: return@HttpHandler HttpResponse.plainText("Missing 'session_id' parameter", HttpStatus.BadRequest)
 
-        // Decrypt API key
+        // Look up org via EventWithTickets
+        val event = Server.database().collection<EventWithTickets>().get(eventId)
+            ?: return@HttpHandler HttpResponse.plainText("Event not found", HttpStatus.NotFound)
+
         val config = Server.database().collection<StripeConfig>()
-            .find(condition { it.organizationId eq orgId }).firstOrNull()
+            .find(condition { it.organizationId eq event.organizationId }).firstOrNull()
             ?: return@HttpHandler HttpResponse.plainText(
-                "No Stripe configuration found for organization $orgId",
+                "No Stripe configuration found",
                 HttpStatus.NotFound
             )
         val cipher = secretBasis.cipher("stripe-keys").await()
@@ -247,7 +205,7 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
         Stripe.apiKey = String(decryptedBytes)
 
         try {
-            // Retrieve session → payment intent → charge → receipt URL
+            // Retrieve session -> payment intent -> charge -> receipt URL
             val session = Session.retrieve(sessionId)
             val paymentIntentId = session.paymentIntent
             if (paymentIntentId != null) {
@@ -284,7 +242,7 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                 body {
                     div("card") {
                         h1 { +"Thank You!" }
-                        p { +"Your purchase is complete. Your tickets will be emailed to you shortly." }
+                        p { +"Your purchase is complete. Your receipt will be emailed to you shortly. You will receive a QR code for tickets closer to the event." }
                     }
                 }
             }

@@ -2,10 +2,7 @@
 package com.lightningkite.lskiteuistarter.utils
 
 import com.lightningkite.lightningserver.runtime.ServerRuntime
-import com.lightningkite.lskiteuistarter.Purchase
-import com.lightningkite.lskiteuistarter._id
-import com.lightningkite.lskiteuistarter.Server
-import com.lightningkite.lskiteuistarter.emailBase
+import com.lightningkite.lskiteuistarter.*
 import com.lightningkite.services.database.*
 import com.lightningkite.services.email.Email
 import com.lightningkite.services.email.EmailAddressWithName
@@ -20,6 +17,10 @@ context(runtime: ServerRuntime)
 suspend fun generateAndSendTicket(purchase: Purchase) {
     if (purchase.emailSent) return
 
+    // by Claude - look up event name from EventWithTickets
+    val event = Server.database().collection<EventWithTickets>().get(purchase.eventId)
+    val eventName = event?.name ?: "Unknown Event"
+
     // Generate QR code
     val qrData = generateQRCode(purchase)
     val qrImage = generateQRImage(qrData)
@@ -27,13 +28,13 @@ suspend fun generateAndSendTicket(purchase: Purchase) {
 
     // Send email
     Server.email().send(Email(
-        subject = "Your Ticket - ${purchase.productName}",
+        subject = "Your Ticket - $eventName",
         to = listOf(EmailAddressWithName(purchase.customerEmail, purchase.customerName)),
         html = kotlinx.html.stream.createHTML(true).html {
             emailBase {
                 this.header("Your Ticket")
                 this.paragraph("Thank you for your purchase!")
-                this.paragraph("Product: ${purchase.productName}")
+                this.paragraph("Event: $eventName")
                 this.paragraph("Quantity: ${purchase.quantity}")
                 this.qrImage(base64QR)
                 this.paragraph("Present this QR code at the event.")

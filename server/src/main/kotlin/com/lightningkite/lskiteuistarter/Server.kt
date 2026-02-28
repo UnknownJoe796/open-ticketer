@@ -87,6 +87,7 @@ object Server : ServerBuilder() {
     val organizations = path.path("organizations") module OrganizationEndpoints
     val memberships = path.path("memberships") module OrganizationMembershipEndpoints
     val stripeConfig = path.path("stripe-config") module StripeConfigEndpoints
+    val events = path.path("events") module EventWithTicketsEndpoints  // by Claude
     val purchases = path.path("purchases") module PurchaseEndpoints
     val redemptions = path.path("redemptions") module TicketRedemptionEndpoints
     val stripeWebhook = path.path("webhooks").path("stripe") module StripeWebhookEndpoint

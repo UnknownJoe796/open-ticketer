@@ -24,6 +24,7 @@ class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
 
     override fun ViewWriter.render() {
         val purchase = Signal<Purchase?>(null)
+        val eventName = Signal("") // by Claude - look up event name
         val redemptions = Signal<List<TicketRedemption>>(emptyList())
         val isLoading = Signal(true)
         val errorMessage = Signal<String?>(null)
@@ -40,7 +41,15 @@ class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
 
             try {
                 // Get purchase
-                purchase.value = api.purchase.detail(purchaseId)
+                val p = api.purchase.detail(purchaseId)
+                purchase.value = p
+
+                // by Claude - look up event name
+                try {
+                    eventName.value = api.eventWithTickets.detail(p.eventId).name
+                } catch (_: Exception) {
+                    eventName.value = "Unknown Event"
+                }
 
                 // Get redemptions
                 redemptions.value = api.ticketRedemption.query(
@@ -80,9 +89,9 @@ class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
                     val totalRedeemed = r.sumOf { it.quantityRedeemed }
                     val remaining = p.quantity - totalRedeemed
 
-                    // Purchase info card
+                    // Purchase info card — by Claude: use looked-up event name
                     card.col {
-                        h3(p.productName)
+                        h3(eventName())
 
                         separator()
 
@@ -147,7 +156,7 @@ class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
                         }
                     }
 
-                    // Check-in button (if remaining)
+                    // Check-in button (if remaining) — by Claude: pass eventId
                     if (remaining > 0) {
                         separator()
                         important.buttonTheme.button {
@@ -157,6 +166,7 @@ class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
                                     CheckInPage(
                                         purchaseId = p._id,
                                         organizationId = p.organizationId,
+                                        eventId = p.eventId,
                                         quantity = 1
                                     )
                                 )
@@ -169,10 +179,12 @@ class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
     }
 }
 
-@Routable("/checkin/{purchaseId}/{organizationId}/{quantity}")
+// by Claude - added eventId parameter
+@Routable("/checkin/{purchaseId}/{organizationId}/{eventId}/{quantity}")
 class CheckInPage(
     val purchaseId: Uuid,
     val organizationId: Uuid,
+    val eventId: String,
     val quantity: Int = 1
 ) : Page {
     override val title: Reactive<String> get() = Constant("Check In")
@@ -237,9 +249,10 @@ class CheckInPage(
                                         val api = session.api
                                         val user = api.userAuth.getSelf()
 
-                                        // Create redemption
+                                        // Create redemption — by Claude: include eventId
                                         api.ticketRedemption.insert(
                                             TicketRedemption(
+                                                eventId = eventId,
                                                 purchaseId = purchaseId,
                                                 quantityRedeemed = quantity,
                                                 scannedByUserId = session.userId,

@@ -63,11 +63,23 @@ object StripeSyncTask : ServerBuilder() {
                             .find(condition { it.stripeCheckoutSessionId eq sessionId }).firstOrNull()
 
                         if (existing == null) {
-                            // Get product details from line items
+                            // by Claude - get product details from line items, sum quantities across all
                             val lineItems = session.listLineItems()?.getData()
-                            val productName = lineItems?.firstOrNull()?.getDescription() ?: "Unknown Product"
-                            val quantity = lineItems?.firstOrNull()?.getQuantity()?.toInt() ?: 1
-                            val productId = lineItems?.firstOrNull()?.getPrice()?.getProduct() ?: "unknown"
+                            val quantity = lineItems?.sumOf { it.getQuantity()?.toInt() ?: 0 } ?: 1
+                            val eventId = lineItems?.firstOrNull()?.getPrice()?.getProduct() ?: "unknown"
+
+                            // by Claude - auto-upsert EventWithTickets if missing
+                            val eventName = lineItems?.firstOrNull()?.getDescription() ?: "Unknown Event"
+                            val existingEvent = Server.database().collection<EventWithTickets>().get(eventId)
+                            if (existingEvent == null) {
+                                Server.database().collection<EventWithTickets>().insertOne(
+                                    EventWithTickets(
+                                        _id = eventId,
+                                        organizationId = config.organizationId,
+                                        name = eventName,
+                                    )
+                                )
+                            }
 
                             val customerEmailStr = session.getCustomerDetails()?.getEmail()
                             if (customerEmailStr == null) {
@@ -78,8 +90,7 @@ object StripeSyncTask : ServerBuilder() {
                             val purchase = Purchase(
                                 stripeCheckoutSessionId = sessionId,
                                 organizationId = config.organizationId,
-                                productId = productId,
-                                productName = productName,
+                                eventId = eventId,
                                 quantity = quantity,
                                 customerEmail = customerEmailStr.toEmailAddress(),
                                 customerName = session.getCustomerDetails()?.getName(),

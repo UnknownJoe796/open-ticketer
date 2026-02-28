@@ -13,6 +13,7 @@ open class CachedApi(val uncached: Api) {
 	open val organizations = ModelCache(uncached.organization, com.lightningkite.lskiteuistarter.Organization.serializer())
 	open val organizationMemberships = ModelCache(uncached.organizationMembership, com.lightningkite.lskiteuistarter.OrganizationMembership.serializer())
 	open val stripeConfigs = ModelCache(uncached.stripeConfig, com.lightningkite.lskiteuistarter.StripeConfig.serializer())
+	open val eventWithTickets = ModelCache(uncached.eventWithTickets, com.lightningkite.lskiteuistarter.EventWithTickets.serializer())
 	open val purchases = ModelCache(uncached.purchase, com.lightningkite.lskiteuistarter.Purchase.serializer())
 	open val ticketRedemptions = ModelCache(uncached.ticketRedemption, com.lightningkite.lskiteuistarter.TicketRedemption.serializer())
 }

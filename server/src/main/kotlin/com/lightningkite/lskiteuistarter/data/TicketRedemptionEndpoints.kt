@@ -93,8 +93,9 @@ object TicketRedemptionEndpoints : ServerBuilder() {
             val scanner = Server.database().collection<User>().get(auth.id)
             val scannerName = scanner?.name ?: "Unknown"
 
-            // Create redemption
+            // Create redemption — by Claude: include eventId from purchase
             val redemption = TicketRedemption(
+                eventId = purchase.eventId,
                 purchaseId = purchase._id,
                 quantityRedeemed = input.quantityToRedeem,
                 scannedByUserId = auth.id,

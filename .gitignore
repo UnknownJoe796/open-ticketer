@@ -26,3 +26,6 @@ testing/.admin-token
 testing/.scripts-source
 testing/.scripts-version
 
+apps/google-services.json
+apps/ios/app/GoogleService-Info.plist
+apps/src/jsMain/resources/public/firebase-messaging-sw.js

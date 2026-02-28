@@ -102,12 +102,21 @@ data class StripeConfig(
 
 @Serializable
 @GenerateDataClassPaths
+data class EventWithTickets(
+    @Description("The Stripe product ID of the event")
+    override val _id: String,
+    @Index @References(Organization::class) val organizationId: Uuid,
+    val name: String,
+    val ticketLimit: Int = Int.MAX_VALUE,
+): HasId<String>
+
+@Serializable
+@GenerateDataClassPaths
 data class Purchase(
     override val _id: Uuid = Uuid.random(),
+    @Index @References(EventWithTickets::class) val eventId: String,
     @Index(unique = IndexUniqueness.Unique) val stripeCheckoutSessionId: String,
     @Index @References(Organization::class) val organizationId: Uuid,
-    val productId: String,
-    val productName: String,
     val quantity: Int,
     @Index val customerEmail: EmailAddress,
     val customerName: String?,
@@ -123,6 +132,7 @@ data class Purchase(
 @GenerateDataClassPaths
 data class TicketRedemption(
     override val _id: Uuid = Uuid.random(),
+    @Index @References(EventWithTickets::class) val eventId: String,
     @Index @References(Purchase::class) val purchaseId: Uuid,
     val quantityRedeemed: Int,
     @Index @References(User::class) val scannedByUserId: Uuid,

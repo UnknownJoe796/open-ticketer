@@ -26,6 +26,7 @@ class ScannerPage(val organizationId: Uuid) : Page {
 
     override fun ViewWriter.render() {
         val scanResult = Signal<VerifyQRResult?>(null)
+        val eventName = Signal("") // by Claude - looked-up event name
         val qrInput = Signal("")
         val errorMessage = Signal<String?>(null)
         val isLoading = Signal(false)
@@ -52,6 +53,15 @@ class ScannerPage(val organizationId: Uuid) : Page {
                     val result = session.api.ticketScannerEndpoint
                         .verifyQRCode(VerifyQRInput(qrData = qrData))
                     scanResult.value = result
+                    // by Claude - look up event name for display
+                    val purchase = result.purchase
+                    if (purchase != null) {
+                        try {
+                            eventName.value = session.api.eventWithTickets.detail(purchase.eventId).name
+                        } catch (_: Exception) {
+                            eventName.value = "Unknown Event"
+                        }
+                    }
                 } catch (e: Exception) {
                     errorMessage.value = e.message ?: "Failed to verify ticket"
                 } finally {
@@ -153,9 +163,10 @@ class ScannerPage(val organizationId: Uuid) : Page {
 
                             separator()
 
+                            // by Claude - use looked-up event name
                             row {
-                                bold.text("Product:")
-                                expanding.text(purchase.productName)
+                                bold.text("Event:")
+                                expanding.text(eventName())
                             }
                             row {
                                 bold.text("Customer:")
@@ -190,6 +201,7 @@ class ScannerPage(val organizationId: Uuid) : Page {
                         // Action buttons
                         separator()
 
+                        // by Claude - pass eventId to CheckInPage
                         if (result.remainingQuantity > 0) {
                             important.buttonTheme.button {
                                 centered.text("Check In (1)")
@@ -198,6 +210,7 @@ class ScannerPage(val organizationId: Uuid) : Page {
                                         CheckInPage(
                                             purchaseId = purchase._id,
                                             organizationId = organizationId,
+                                            eventId = purchase.eventId,
                                             quantity = 1
                                         )
                                     )
