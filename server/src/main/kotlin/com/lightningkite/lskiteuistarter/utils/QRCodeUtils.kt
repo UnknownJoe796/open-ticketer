@@ -10,56 +10,70 @@ import com.lightningkite.lightningserver.encryption.signer
 import com.lightningkite.lightningserver.encryption.sign
 import com.lightningkite.lightningserver.encryption.verify
 import com.lightningkite.lskiteuistarter.Purchase
-import com.lightningkite.lskiteuistarter.Server
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.util.Base64
 import javax.imageio.ImageIO
-import kotlin.time.Instant
 import kotlin.uuid.Uuid
+import kotlin.uuid.toJavaUuid
+import kotlin.uuid.toKotlinUuid
 
-@Serializable
+// by Claude - JWT-style compact QR format: base64url(uuid_bytes).base64url(signature)
 data class QRPayload(
     val purchaseId: Uuid,
-    val timestamp: Instant,
-    val signature: String
 )
 
-/**
- * Generates a signed QR code payload for a purchase.
- * The payload is signed with HMAC-SHA512 to prevent tampering.
- */
-context(runtime: ServerRuntime)
-suspend fun generateQRCode(purchase: Purchase): String {
-    val payload = QRPayload(
-        purchaseId = purchase._id,
-        timestamp = kotlin.time.Clock.System.now(),
-        signature = ""
-    )
+private val b64Encoder = Base64.getUrlEncoder().withoutPadding()
+private val b64Decoder = Base64.getUrlDecoder()
 
-    val signer = secretBasis.signer("ticket-qr").await()
-    val dataToSign = "${payload.purchaseId}|${payload.timestamp}"
-    val signature = signer.sign(dataToSign)
-    val signedPayload = payload.copy(signature = signature)
+private fun Uuid.toBytes(): ByteArray {
+    val java = this.toJavaUuid()
+    return ByteBuffer.allocate(16)
+        .putLong(java.mostSignificantBits)
+        .putLong(java.leastSignificantBits)
+        .array()
+}
 
-    return Json.encodeToString(signedPayload)
+private fun ByteArray.toUuid(): Uuid {
+    val buf = ByteBuffer.wrap(this)
+    return java.util.UUID(buf.getLong(), buf.getLong()).toKotlinUuid()
 }
 
 /**
- * Verifies a QR code signature and returns the payload if valid.
- * Returns null if the signature is invalid.
+ * Generates a compact signed QR code string for a purchase.
+ * Format: base64url(uuid_bytes).base64url(hmac_signature)
+ */
+context(runtime: ServerRuntime)
+suspend fun generateQRData(purchase: Purchase): String = generateQRData(purchase._id)
+/**
+ * Generates a compact signed QR code string for a purchase.
+ * Format: base64url(uuid_bytes).base64url(hmac_signature)
+ */
+context(runtime: ServerRuntime)
+suspend fun generateQRData(id: Uuid): String {
+    val idBytes = id.toBytes()
+    val idPart = b64Encoder.encodeToString(idBytes)
+    val signer = secretBasis.signer("ticket-qr").await()
+    val signature = signer.sign(idBytes)
+    val sigPart = b64Encoder.encodeToString(signature)
+    return "$idPart.$sigPart"
+}
+
+/**
+ * Verifies a compact QR code signature and returns the payload if valid.
+ * Returns null if the format is wrong or the signature is invalid.
  */
 context(runtime: ServerRuntime)
 suspend fun verifyQRSignature(qrData: String): QRPayload? {
     return try {
-        val payload = Json.decodeFromString<QRPayload>(qrData)
+        val parts = qrData.split('.', limit = 2)
+        if (parts.size != 2) return null
+        val idBytes = b64Decoder.decode(parts[0])
+        if (idBytes.size != 16) return null
+        val signature = b64Decoder.decode(parts[1])
         val signer = secretBasis.signer("ticket-qr").await()
-        val dataToVerify = "${payload.purchaseId}|${payload.timestamp}"
-
-        if (signer.verify(dataToVerify, payload.signature)) {
-            payload
+        if (signer.verify(idBytes, signature)) {
+            QRPayload(purchaseId = idBytes.toUuid())
         } else null
     } catch (e: Exception) {
         null

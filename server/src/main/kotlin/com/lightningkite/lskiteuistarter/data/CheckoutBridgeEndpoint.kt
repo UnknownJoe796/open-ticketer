@@ -163,10 +163,20 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                             SessionCreateParams.LineItem.builder()
                                 .setPrice(item.priceId)
                                 .setQuantity(item.quantity)
+                                .let {
+                                    event.taxRateId?.let { rate ->
+                                        it.addTaxRate(rate)
+                                    } ?: it
+                                }
                                 .build()
                         )
                     }
                 }
+                .setPaymentIntentData(
+                    SessionCreateParams.PaymentIntentData.builder()
+                        .setDescription("Note: The tickets sold will be sent in a later email closer to the event.")
+                        .build()
+                )
                 .build()
             val session = Session.create(params)
 

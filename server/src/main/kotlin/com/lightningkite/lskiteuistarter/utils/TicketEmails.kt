@@ -22,7 +22,7 @@ suspend fun generateAndSendTicket(purchase: Purchase) {
     val eventName = event?.name ?: "Unknown Event"
 
     // Generate QR code
-    val qrData = generateQRCode(purchase)
+    val qrData = generateQRData(purchase)
     val qrImage = generateQRImage(qrData)
     val base64QR = Base64.getEncoder().encodeToString(qrImage)
 

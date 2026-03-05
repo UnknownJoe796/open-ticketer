@@ -34,6 +34,10 @@ object StripeConfigEndpoints : ServerBuilder() {
             ModelPermissions(
                 create = systemAdmin,
                 read = systemAdmin, // Only system admins can read directly
+                readMask = mask {
+                    it.webhookSecret.mask("")
+                    it.encryptedApiKey.mask("")
+                },
                 update = systemAdmin,
                 // Note: API key field is write-only - custom endpoints handle encryption
                 delete = systemAdmin,

@@ -108,6 +108,7 @@ data class EventWithTickets(
     @Index @References(Organization::class) val organizationId: Uuid,
     val name: String,
     val ticketLimit: Int = Int.MAX_VALUE,
+    val taxRateId: String? = null,
 ): HasId<String>
 
 @Serializable
