@@ -12,7 +12,7 @@ kotlinxSerializationCsvDurable = "0.2.21-1"
 ksp = "2.2.20-2.0.4"
 lightningServer = "5.0.0-prerelease-355"
 lightningServerKiteui = "8.0.0-prerelease-109"
-serviceAbstractions = "0.0.1-158"
+serviceAbstractions = "0.0.1-171"
 shadow = "8.1.1"
 
 [libraries]

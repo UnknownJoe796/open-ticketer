@@ -94,7 +94,6 @@ object Server : ServerBuilder() {
     val checkoutBridge = path.path("buy") module CheckoutBridgeEndpoint  // by Claude
     val scanner = path module TicketScannerEndpoint
     val stripeSyncTask = path module StripeSyncTask
-    val sampleEmails = path.path("sample-emails") module SampleEmailEndpoints  // by Claude
 
     val multiplex = path.path("multiplex") bind MultiplexWebSocketHandler()
     val base = path bind QueryParamWebSocketHandler()

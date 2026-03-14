@@ -2,17 +2,24 @@
 package com.lightningkite.lskiteuistarter.data
 
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
+import com.lightningkite.lightningserver.definition.secretBasis
+import com.lightningkite.lightningserver.encryption.cipher
 import com.lightningkite.lightningserver.http.*
 import com.lightningkite.lightningserver.plainText
 import com.lightningkite.lightningserver.runtime.ServerRuntime
 import com.lightningkite.lskiteuistarter.*
 import com.lightningkite.services.database.*
+import com.lightningkite.services.database.table
 import com.lightningkite.toEmailAddress
+import com.stripe.Stripe
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
 import com.stripe.model.Event
 import com.stripe.model.checkout.Session
+import com.stripe.net.RequestOptions
 import com.stripe.net.Webhook
+import com.stripe.param.checkout.SessionListLineItemsParams
+import kotlin.time.Instant
 
 // by Claude - uses raw HttpHandler because Stripe webhooks need raw body for HMAC signature verification
 object StripeWebhookEndpoint : ServerBuilder() {
@@ -20,12 +27,13 @@ object StripeWebhookEndpoint : ServerBuilder() {
     val webhook = path.post bind HttpHandler { request ->
         val bodyText = request.body?.text()
             ?: return@HttpHandler HttpResponse.plainText("Missing body", HttpStatus.BadRequest)
-        val signature = request.headers["Stripe-Signature"]?.toHttpString()
-            ?: return@HttpHandler HttpResponse.plainText("Missing Stripe-Signature header", HttpStatus.BadRequest)
+        val signature = request.headers.getMany("Stripe-Signature").joinToString(",") { it.toHttpString() }
+        if (signature.isEmpty())
+            return@HttpHandler HttpResponse.plainText("Missing Stripe-Signature header", HttpStatus.BadRequest)
 
         try {
             // Try all configured webhook secrets to find the matching one
-            val configs = Server.database().collection<StripeConfig>().find(Condition.Always).toList()
+            val configs = Server.stripeConfig.info.table().find(Condition.Always).toList()
 
             var event: Event? = null
             var matchedConfig: StripeConfig? = null
@@ -55,7 +63,6 @@ object StripeWebhookEndpoint : ServerBuilder() {
             HttpResponse.plainText("Webhook received")
 
         } catch (e: Exception) {
-            println("Webhook error: ${e.message}")
             e.printStackTrace()
             HttpResponse.plainText(
                 "Webhook processing failed: ${e.message}",
@@ -66,8 +73,19 @@ object StripeWebhookEndpoint : ServerBuilder() {
 
     context(_: ServerRuntime)
     private suspend fun handleCheckoutSessionCompleted(event: Event, config: StripeConfig) {
-        val session = event.dataObjectDeserializer.`object`.get() as? Session
-            ?: throw IllegalArgumentException("Invalid session object")
+        val deserializer = event.dataObjectDeserializer
+        val session = if (deserializer.`object`.isPresent) {
+            deserializer.`object`.get() as? Session
+        } else {
+            println("Stripe SDK failed to deserialize session safely (API version mismatch: event=${event.apiVersion}, SDK=${Stripe.API_VERSION}). Attempting unsafe deserialization...")
+            try {
+                deserializer.deserializeUnsafe() as? Session
+            } catch (e: Exception) {
+                println("Unsafe deserialization also failed: ${e.message}")
+                println("Raw JSON: ${deserializer.rawJson}")
+                null
+            }
+        } ?: throw IllegalArgumentException("Invalid or unsupported session object (SDK version mismatch: event=${event.apiVersion}, SDK=${Stripe.API_VERSION})")
 
         val sessionId = session.getId()
 
@@ -79,7 +97,7 @@ object StripeWebhookEndpoint : ServerBuilder() {
             return
         }
 
-        val lineItems = session.listLineItems()?.getData()
+        val lineItems = session.listLineItems(SessionListLineItemsParams.builder().build(), config.options())?.getData()
         // by Claude - sum quantity across ALL line items (bin-packed orders may have multiple)
         val quantity = lineItems?.sumOf { it.getQuantity()?.toInt() ?: 0 } ?: 1
         val eventId = lineItems?.firstOrNull()?.getPrice()?.getProduct() ?: "unknown"
@@ -108,7 +126,7 @@ object StripeWebhookEndpoint : ServerBuilder() {
             customerName = session.getCustomerDetails()?.getName(),
             amountTotal = session.getAmountTotal() ?: 0L,
             currency = session.getCurrency() ?: "usd",
-            purchasedAt = kotlin.time.Instant.fromEpochSeconds(session.getCreated()),
+            purchasedAt = Instant.fromEpochSeconds(session.getCreated()),
             emailSent = false
         )
 
@@ -116,3 +134,12 @@ object StripeWebhookEndpoint : ServerBuilder() {
         println("Created purchase ${purchase._id} for session $sessionId")
     }
 }
+
+context(serverRuntime: ServerRuntime)
+suspend fun StripeConfig.options(): RequestOptions = RequestOptions.builder().setApiKey(
+    run {
+        val cipher = secretBasis.cipher("stripe-keys").await()
+        val decryptedBytes = cipher.decrypt(java.util.Base64.getDecoder().decode(encryptedApiKey))
+        String(decryptedBytes)
+    }
+).build()

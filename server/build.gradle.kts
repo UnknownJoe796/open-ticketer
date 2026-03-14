@@ -41,7 +41,7 @@ dependencies {
     implementation(libs.kotliner.cli)
 
     // by Claude - Open Ticketer dependencies
-    implementation("com.stripe:stripe-java:26.0.0")
+    implementation("com.stripe:stripe-java:31.4.1")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.zxing:javase:3.5.3")
 

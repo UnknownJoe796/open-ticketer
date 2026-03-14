@@ -5,6 +5,7 @@ import com.lightningkite.lightningserver.definition.ScheduledTask
 import com.lightningkite.lightningserver.definition.builder.ServerBuilder
 import com.lightningkite.lightningserver.definition.secretBasis
 import com.lightningkite.lightningserver.encryption.cipher
+import com.lightningkite.lskiteuistarter.data.options
 import com.lightningkite.lskiteuistarter.*
 import com.lightningkite.services.database.*
 import com.lightningkite.toEmailAddress
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
 import com.stripe.Stripe
 import com.stripe.model.checkout.Session
+import com.stripe.param.checkout.SessionListLineItemsParams
 import com.stripe.param.checkout.SessionListParams
 import kotlin.time.Duration.Companion.minutes
 
@@ -28,9 +30,7 @@ object StripeSyncTask : ServerBuilder() {
                 println("Syncing organization ${config.organizationId}")
 
                 // by Claude - decrypt API key using secretBasis (same pattern as StripeConfigEndpoints)
-                val cipher = secretBasis.cipher("stripe-keys").await()
-                val decryptedBytes = cipher.decrypt(java.util.Base64.getDecoder().decode(config.encryptedApiKey))
-                Stripe.apiKey = String(decryptedBytes)
+                val options = config.options()
 
                 // Build query parameters
                 val paramsBuilder = SessionListParams.builder()
@@ -49,7 +49,7 @@ object StripeSyncTask : ServerBuilder() {
                 val params = paramsBuilder.build()
 
                 // Query Stripe for checkout sessions
-                val sessions = Session.list(params)
+                val sessions = Session.list(params, options)
                 val sessionList = sessions.getData()
 
                 println("Found ${sessionList.size} sessions for organization ${config.organizationId}")
@@ -64,7 +64,7 @@ object StripeSyncTask : ServerBuilder() {
 
                         if (existing == null) {
                             // by Claude - get product details from line items, sum quantities across all
-                            val lineItems = session.listLineItems()?.getData()
+                            val lineItems = session.listLineItems(SessionListLineItemsParams.builder().build(), options)?.getData()
                             val quantity = lineItems?.sumOf { it.getQuantity()?.toInt() ?: 0 } ?: 1
                             val eventId = lineItems?.firstOrNull()?.getPrice()?.getProduct() ?: "unknown"
 

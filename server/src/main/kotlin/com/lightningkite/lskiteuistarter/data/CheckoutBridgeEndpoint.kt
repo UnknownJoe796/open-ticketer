@@ -54,9 +54,6 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                 "No Stripe configuration found for this event's organization",
                 HttpStatus.NotFound
             )
-        val cipher = secretBasis.cipher("stripe-keys").await()
-        val decryptedBytes = cipher.decrypt(java.util.Base64.getDecoder().decode(config.encryptedApiKey))
-        Stripe.apiKey = String(decryptedBytes)
 
         // 4. Enforce ticket limit — sum existing purchases for this event
         val existingPurchases = Server.database().collection<Purchase>()
@@ -76,7 +73,7 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
             .setActive(true)
             .setLimit(100)
             .build()
-        val prices = Price.list(priceParams).data
+        val prices = Price.list(priceParams, config.options()).data
         if (prices.isEmpty()) {
             return@HttpHandler HttpResponse.plainText(
                 "No active prices found for this event in Stripe",
@@ -178,7 +175,7 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                         .build()
                 )
                 .build()
-            val session = Session.create(params)
+            val session = Session.create(params, config.options())
 
             // 10. 303 redirect to Stripe Checkout
             HttpResponse(
@@ -210,18 +207,16 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                 "No Stripe configuration found",
                 HttpStatus.NotFound
             )
-        val cipher = secretBasis.cipher("stripe-keys").await()
-        val decryptedBytes = cipher.decrypt(java.util.Base64.getDecoder().decode(config.encryptedApiKey))
-        Stripe.apiKey = String(decryptedBytes)
 
         try {
             // Retrieve session -> payment intent -> charge -> receipt URL
-            val session = Session.retrieve(sessionId)
+            val options = config.options()
+            val session = Session.retrieve(sessionId, options)
             val paymentIntentId = session.paymentIntent
             if (paymentIntentId != null) {
-                val paymentIntent = PaymentIntent.retrieve(paymentIntentId)
+                val paymentIntent = PaymentIntent.retrieve(paymentIntentId, options)
                 val receiptUrl = paymentIntent.latestCharge?.let { chargeId ->
-                    com.stripe.model.Charge.retrieve(chargeId).receiptUrl
+                    com.stripe.model.Charge.retrieve(chargeId, options).receiptUrl
                 }
                 if (receiptUrl != null) {
                     return@HttpHandler HttpResponse(

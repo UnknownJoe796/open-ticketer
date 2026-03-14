@@ -4,6 +4,7 @@ import com.lightningkite.EmailAddress
 import com.lightningkite.services.data.*
 import com.lightningkite.services.data.IndexUniqueness
 import com.lightningkite.services.database.HasId
+import com.lightningkite.services.files.ServerFile
 import kotlinx.datetime.*
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
@@ -107,9 +108,26 @@ data class EventWithTickets(
     override val _id: String,
     @Index @References(Organization::class) val organizationId: Uuid,
     val name: String,
+    val description: String? = null,
+    val dateTime: LocalDateTime? = null,
+    val location: Address? = null,
+    val image: ServerFile? = null,
     val ticketLimit: Int = Int.MAX_VALUE,
     val taxRateId: String? = null,
 ): HasId<String>
+
+@Serializable
+@GenerateDataClassPaths
+data class Address(
+    val name: String? = null,
+    val line1: String,
+    val city: String,
+    val state: String,
+    val zip: String? = null,
+) {
+    override fun toString(): String = listOfNotNull(name, line1, city, state).joinToString(", ") + (zip?.let { " $it" } ?: "")
+}
+
 
 @Serializable
 @GenerateDataClassPaths
