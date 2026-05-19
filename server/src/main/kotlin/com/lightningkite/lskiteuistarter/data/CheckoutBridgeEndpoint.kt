@@ -170,6 +170,7 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                                 .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Social media").setValue("socialmedia").build())
                                 .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Google search").setValue("googlesearch").build())
                                 .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Poster").setValue("poster").build())
+                                .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Ren Faire Flyers").setValue("renfaire").build())
                                 .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Other").setValue("other").build())
                                 .build()
                         )
