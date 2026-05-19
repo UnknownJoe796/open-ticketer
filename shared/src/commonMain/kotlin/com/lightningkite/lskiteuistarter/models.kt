@@ -144,6 +144,7 @@ data class Purchase(
     @Index val purchasedAt: Instant,
     val qrCodeData: String? = null,  // JSON payload
     val emailSent: Boolean = false,
+    val heardAboutUsFrom: String? = null,
     val created: Instant = Clock.System.now(),
 ) : HasId<Uuid>
 

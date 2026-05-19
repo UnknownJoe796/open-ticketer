@@ -29,7 +29,7 @@ object TicketScannerEndpoint : ServerBuilder() {
                 )
 
             // Get the purchase
-            val purchase = Server.database().collection<Purchase>()
+            val purchase = Server.purchases.info.table()
                 .get(qrPayload.purchaseId)
                 ?: return@ApiHttpHandler VerifyQRResult(
                     valid = false,
@@ -37,7 +37,7 @@ object TicketScannerEndpoint : ServerBuilder() {
                 )
 
             // Check if user is a member of the purchase's organization
-            val isMember = Server.database().collection<OrganizationMembership>()
+            val isMember = Server.memberships.info.table()
                 .find(condition {
                     (it.organizationId eq purchase.organizationId) and (it.userId eq auth.id)
                 }).firstOrNull() != null
@@ -50,7 +50,7 @@ object TicketScannerEndpoint : ServerBuilder() {
             }
 
             // Get all redemptions for this purchase
-            val redemptions = Server.database().collection<TicketRedemption>()
+            val redemptions = Server.redemptions.info.table()
                 .find(condition { it.purchaseId eq purchase._id })
                 .toList()
 

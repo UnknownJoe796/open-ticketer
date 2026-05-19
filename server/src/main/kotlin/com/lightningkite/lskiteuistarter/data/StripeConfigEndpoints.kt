@@ -53,7 +53,7 @@ object StripeConfigEndpoints : ServerBuilder() {
         auth = UserAuth.require(),
         implementation = { input: SetStripeKeyInput ->
             // Check if user is admin of the organization
-            val isOrgAdmin = Server.database().collection<OrganizationMembership>()
+            val isOrgAdmin = Server.memberships.info.table()
                 .find(condition {
                     (it.organizationId eq input.organizationId) and
                     (it.userId eq auth.id) and
@@ -72,12 +72,12 @@ object StripeConfigEndpoints : ServerBuilder() {
             val encryptedKey = java.util.Base64.getEncoder().encodeToString(encryptedBytes)
 
             // Check if config already exists for this organization
-            val existing = Server.database().collection<StripeConfig>()
+            val existing = Server.stripeConfig.info.table()
                 .find(condition { it.organizationId eq input.organizationId }).firstOrNull()
 
             if (existing != null) {
                 // Update existing config
-                Server.database().collection<StripeConfig>().replaceOne(
+                Server.stripeConfig.info.table().replaceOne(
                     condition { it._id eq existing._id },
                     existing.copy(encryptedApiKey = encryptedKey, webhookSecret = input.webhookSecret)
                 )
@@ -95,7 +95,7 @@ object StripeConfigEndpoints : ServerBuilder() {
                     encryptedApiKey = encryptedKey,
                     webhookSecret = input.webhookSecret
                 )
-                Server.database().collection<StripeConfig>().insertOne(config)
+                Server.stripeConfig.info.table().insertOne(config)
                 StripeConfigPublic(
                     _id = config._id,
                     organizationId = config.organizationId,
@@ -113,7 +113,7 @@ object StripeConfigEndpoints : ServerBuilder() {
         auth = UserAuth.require(),
         implementation = { organizationId: Uuid ->
             // Check if user is member of the organization
-            val isMember = Server.database().collection<OrganizationMembership>()
+            val isMember = Server.memberships.info.table()
                 .find(condition {
                     (it.organizationId eq organizationId) and (it.userId eq auth.id)
                 }).firstOrNull() != null
@@ -124,7 +124,7 @@ object StripeConfigEndpoints : ServerBuilder() {
                 throw IllegalAccessException("Only organization members can view config")
             }
 
-            val config = Server.database().collection<StripeConfig>()
+            val config = Server.stripeConfig.info.table()
                 .find(condition { it.organizationId eq organizationId })
                 .firstOrNull() ?: throw NoSuchElementException("No Stripe config found for organization")
 

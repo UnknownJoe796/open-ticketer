@@ -44,7 +44,7 @@ object OrganizationMembershipEndpoints : ServerBuilder() {
         auth = UserAuth.require(),
         implementation = { input: AddMemberInput ->
             // Check if user is admin of the organization
-            val isOrgAdmin = Server.database().collection<OrganizationMembership>()
+            val isOrgAdmin = Server.memberships.info.table()
                 .find(condition {
                     (it.organizationId eq input.organizationId) and
                     (it.userId eq auth.id) and
@@ -58,13 +58,13 @@ object OrganizationMembershipEndpoints : ServerBuilder() {
             }
 
             // Find user by email
-            val targetUser = Server.database().collection<User>()
+            val targetUser = Server.users.info.table()
                 .find(condition { it.email eq EmailAddress(input.userEmail) })
                 .firstOrNull()
                 ?: throw IllegalArgumentException("User with email '${input.userEmail}' not found")
 
             // Check if membership already exists
-            val existing = Server.database().collection<OrganizationMembership>()
+            val existing = Server.memberships.info.table()
                 .find(condition {
                     (it.organizationId eq input.organizationId) and (it.userId eq targetUser._id)
                 }).firstOrNull()
@@ -80,7 +80,7 @@ object OrganizationMembershipEndpoints : ServerBuilder() {
                 role = input.role
             )
 
-            Server.database().collection<OrganizationMembership>().insertOne(membership)
+            Server.memberships.info.table().insertOne(membership)
             membership
         }
     )

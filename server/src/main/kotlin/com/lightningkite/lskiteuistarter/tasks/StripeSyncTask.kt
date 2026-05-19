@@ -22,7 +22,7 @@ object StripeSyncTask : ServerBuilder() {
     val syncTask = path.path("stripe-sync") bind ScheduledTask(30.minutes) {
         println("Starting Stripe sync task...")
 
-        val configs = Server.database().collection<StripeConfig>().find(Condition.Always).toList()
+        val configs = Server.stripeConfig.info.table().find(Condition.Always).toList()
         println("Found ${configs.size} Stripe configs to sync")
 
         configs.forEach { config ->
@@ -59,7 +59,7 @@ object StripeSyncTask : ServerBuilder() {
                         val sessionId = session.getId()
 
                         // Check if purchase already exists
-                        val existing = Server.database().collection<Purchase>()
+                        val existing = Server.purchases.info.table()
                             .find(condition { it.stripeCheckoutSessionId eq sessionId }).firstOrNull()
 
                         if (existing == null) {
@@ -70,9 +70,9 @@ object StripeSyncTask : ServerBuilder() {
 
                             // by Claude - auto-upsert EventWithTickets if missing
                             val eventName = lineItems?.firstOrNull()?.getDescription() ?: "Unknown Event"
-                            val existingEvent = Server.database().collection<EventWithTickets>().get(eventId)
+                            val existingEvent = Server.events.info.table().get(eventId)
                             if (existingEvent == null) {
-                                Server.database().collection<EventWithTickets>().insertOne(
+                                Server.events.info.table().insertOne(
                                     EventWithTickets(
                                         _id = eventId,
                                         organizationId = config.organizationId,
@@ -87,6 +87,10 @@ object StripeSyncTask : ServerBuilder() {
                                 continue
                             }
 
+                            val heardAboutUsFrom = session.getCustomFields()
+                                ?.firstOrNull { it.key == "heardaboutusfrom" }
+                                ?.dropdown?.value
+
                             val purchase = Purchase(
                                 stripeCheckoutSessionId = sessionId,
                                 organizationId = config.organizationId,
@@ -97,17 +101,18 @@ object StripeSyncTask : ServerBuilder() {
                                 amountTotal = session.getAmountTotal() ?: 0L,
                                 currency = session.getCurrency() ?: "usd",
                                 purchasedAt = kotlin.time.Instant.fromEpochSeconds(session.getCreated()),
-                                emailSent = false
+                                emailSent = false,
+                                heardAboutUsFrom = heardAboutUsFrom,
                             )
 
-                            Server.database().collection<Purchase>().insertOne(purchase)
+                            Server.purchases.info.table().insertOne(purchase)
                             println("Created purchase ${purchase._id} from session $sessionId")
                         }
                     }
                 }
 
                 // Update last synced timestamp
-                Server.database().collection<StripeConfig>().updateOne(
+                Server.stripeConfig.info.table().updateOne(
                     condition { it._id eq config._id },
                     modification {
                         it.lastSyncedAt assign kotlin.time.Clock.System.now()

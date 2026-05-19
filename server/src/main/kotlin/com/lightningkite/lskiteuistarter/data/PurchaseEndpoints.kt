@@ -73,6 +73,26 @@ object PurchaseEndpoints : ServerBuilder() {
         }
     )
 
+    val resendAllUnmarked = path.path("resend-tickets").post bind ApiHttpHandler(
+        summary = "Resend All Tickets",
+        auth = UserAuth.require { it.userRole() >= UserRole.Admin },
+        implementation = { _: Unit ->
+            var sent = 0
+            info.table(this).find(
+                condition = condition { it.emailSent.eq(false) }
+            ).collect {
+                try {
+                    if(generateAndSendTicket(it)) {
+                        sent++
+                    }
+                } catch(e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            sent
+        }
+    )
+
     val viewTicketEmail = path.arg<Uuid>("id").path("view-ticket").get bind HttpHandler {
         val purchase = info.table(it.access(UserAuth.require())).get(it.path.arg1) ?: throw NotFoundException()
         val event = Server.events.info.table().get(purchase.eventId)

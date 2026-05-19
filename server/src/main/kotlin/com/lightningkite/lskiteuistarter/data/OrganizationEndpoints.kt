@@ -26,7 +26,7 @@ object OrganizationEndpoints : ServerBuilder() {
             val readCondition = if (isSystemAdmin) {
                 Condition.Always
             } else {
-                val memberOrgIds = Server.database().collection<OrganizationMembership>()
+                val memberOrgIds = Server.memberships.info.table()
                     .find(condition { it.userId eq auth.id })
                     .toList()
                     .map { it.organizationId }

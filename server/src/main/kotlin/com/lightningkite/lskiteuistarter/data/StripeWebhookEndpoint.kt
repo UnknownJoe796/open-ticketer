@@ -89,7 +89,7 @@ object StripeWebhookEndpoint : ServerBuilder() {
 
         val sessionId = session.getId()
 
-        val existing = Server.database().collection<Purchase>()
+        val existing = Server.purchases.info.table()
             .find(condition { it.stripeCheckoutSessionId eq sessionId }).firstOrNull()
 
         if (existing != null) {
@@ -104,9 +104,9 @@ object StripeWebhookEndpoint : ServerBuilder() {
 
         // by Claude - auto-upsert EventWithTickets if one doesn't exist for this product
         val eventName = lineItems?.firstOrNull()?.getDescription() ?: "Unknown Event"
-        val existingEvent = Server.database().collection<EventWithTickets>().get(eventId)
+        val existingEvent = Server.events.info.table().get(eventId)
         if (existingEvent == null) {
-            Server.database().collection<EventWithTickets>().insertOne(
+            Server.events.info.table().insertOne(
                 EventWithTickets(
                     _id = eventId,
                     organizationId = config.organizationId,
@@ -114,6 +114,11 @@ object StripeWebhookEndpoint : ServerBuilder() {
                 )
             )
         }
+
+        // Extract "where did you hear about us" custom field response
+        val heardAboutUsFrom = session.getCustomFields()
+            ?.firstOrNull { it.key == "heardaboutusfrom" }
+            ?.dropdown?.value
 
         // Create purchase record (triggers postCreate signal to send email)
         val purchase = Purchase(
@@ -127,10 +132,11 @@ object StripeWebhookEndpoint : ServerBuilder() {
             amountTotal = session.getAmountTotal() ?: 0L,
             currency = session.getCurrency() ?: "usd",
             purchasedAt = Instant.fromEpochSeconds(session.getCreated()),
-            emailSent = false
+            emailSent = false,
+            heardAboutUsFrom = heardAboutUsFrom,
         )
 
-        Server.database().collection<Purchase>().insertOne(purchase)
+        Server.purchases.info.table().insertOne(purchase)
         println("Created purchase ${purchase._id} for session $sessionId")
     }
 }

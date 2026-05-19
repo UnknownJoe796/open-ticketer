@@ -51,7 +51,7 @@ object TicketRedemptionEndpoints : ServerBuilder() {
                 )
 
             // Get the purchase
-            val purchase = Server.database().collection<Purchase>()
+            val purchase = Server.purchases.info.table()
                 .get(qrPayload.purchaseId)
                 ?: return@ApiHttpHandler RedeemTicketResult(
                     success = false,
@@ -59,7 +59,7 @@ object TicketRedemptionEndpoints : ServerBuilder() {
                 )
 
             // Check if user is a member of the purchase's organization
-            val isMember = Server.database().collection<OrganizationMembership>()
+            val isMember = Server.memberships.info.table()
                 .find(condition {
                     (it.organizationId eq purchase.organizationId) and (it.userId eq auth.id)
                 }).firstOrNull() != null
@@ -74,7 +74,7 @@ object TicketRedemptionEndpoints : ServerBuilder() {
             }
 
             // Check how many have already been redeemed
-            val existingRedemptions = Server.database().collection<TicketRedemption>()
+            val existingRedemptions = Server.redemptions.info.table()
                 .find(condition { it.purchaseId eq purchase._id })
                 .toList()
 
@@ -90,7 +90,7 @@ object TicketRedemptionEndpoints : ServerBuilder() {
             }
 
             // Get scanner's name
-            val scanner = Server.database().collection<User>().get(auth.id)
+            val scanner = Server.users.info.table().get(auth.id)
             val scannerName = scanner?.name ?: "Unknown"
 
             // Create redemption — by Claude: include eventId from purchase
@@ -103,7 +103,7 @@ object TicketRedemptionEndpoints : ServerBuilder() {
                 notes = input.notes
             )
 
-            Server.database().collection<TicketRedemption>().insertOne(redemption)
+            Server.redemptions.info.table().insertOne(redemption)
 
             RedeemTicketResult(
                 success = true,

@@ -27,10 +27,10 @@ private const val eventFilename = "event.png"
  * Updates the purchase record to mark the email as sent and store the QR data.
  */
 context(runtime: ServerRuntime)
-suspend fun generateAndSendTicket(purchase: Purchase) {
-    if (purchase.emailSent) return
+suspend fun generateAndSendTicket(purchase: Purchase): Boolean {
+    if (purchase.emailSent) return false
 
-    val event = Server.database().collection<EventWithTickets>().get(purchase.eventId)
+    val event = Server.events.info.table().get(purchase.eventId)
     val eventName = event?.name ?: "Unknown Event"
 
     // Generate QR code
@@ -60,10 +60,11 @@ suspend fun generateAndSendTicket(purchase: Purchase) {
     ))
 
     // Mark as sent and store QR data
-    Server.database().collection<Purchase>().replaceOne(
+    Server.purchases.info.table().replaceOne(
         condition { it._id eq purchase._id },
         purchase.copy(emailSent = true, qrCodeData = qrData)
     )
+    return true
 }
 
 fun HTML.ticketEmailHtml(
@@ -73,8 +74,8 @@ fun HTML.ticketEmailHtml(
     emailBase {
         // Personalized greeting
         greeting(
-            purchase.customerName?.ifBlank { null } ?: "Guest",
-            "You've got tickets!"
+            "You've got tickets!",
+            "Thank you for your purchase.",
         )
 
         // Hero event image

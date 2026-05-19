@@ -41,14 +41,14 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
         }
 
         // 2. Look up EventWithTickets → org ID
-        val event = Server.database().collection<EventWithTickets>().get(eventId)
+        val event = Server.events.info.table().get(eventId)
             ?: return@HttpHandler HttpResponse.plainText("Event not found", HttpStatus.NotFound)
 
-        val org = Server.database().collection<Organization>().get(event.organizationId)
+        val org = Server.organizations.info.table().get(event.organizationId)
             ?: return@HttpHandler HttpResponse.plainText("Organization not found", HttpStatus.NotFound)
 
         // 3. Get Stripe API key
-        val config = Server.database().collection<StripeConfig>()
+        val config = Server.stripeConfig.info.table()
             .find(condition { it.organizationId eq event.organizationId }).firstOrNull()
             ?: return@HttpHandler HttpResponse.plainText(
                 "No Stripe configuration found for this event's organization",
@@ -56,7 +56,7 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
             )
 
         // 4. Enforce ticket limit — sum existing purchases for this event
-        val existingPurchases = Server.database().collection<Purchase>()
+        val existingPurchases = Server.purchases.info.table()
             .find(condition { it.eventId eq eventId }).toList()
         val totalSold = existingPurchases.sumOf { it.quantity }
         if (totalSold + quantity > event.ticketLimit) {
@@ -154,6 +154,28 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                 .setSuccessUrl(successUrl)
                 .setCancelUrl(cancelUrl)
                 .setAllowPromotionCodes(true)
+                .addCustomField(
+                    SessionCreateParams.CustomField.builder()
+                        .setKey("heardaboutusfrom")
+                        .setType(SessionCreateParams.CustomField.Type.DROPDOWN)
+                        .setLabel(
+                            SessionCreateParams.CustomField.Label.builder()
+                                .setType(SessionCreateParams.CustomField.Label.Type.CUSTOM)
+                                .setCustom("Where did you hear about us?")
+                                .build()
+                        )
+                        .setDropdown(
+                            SessionCreateParams.CustomField.Dropdown.builder()
+                                .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("From a friend").setValue("friend").build())
+                                .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Social media").setValue("socialmedia").build())
+                                .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Google search").setValue("googlesearch").build())
+                                .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Poster").setValue("poster").build())
+                                .addOption(SessionCreateParams.CustomField.Dropdown.Option.builder().setLabel("Other").setValue("other").build())
+                                .build()
+                        )
+                        .setOptional(false)
+                        .build()
+                )
                 .apply {
                     for (item in lineItems) {
                         addLineItem(
@@ -171,7 +193,6 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                 }
                 .setPaymentIntentData(
                     SessionCreateParams.PaymentIntentData.builder()
-                        .setDescription("Note: The tickets sold will be sent in a later email closer to the event.")
                         .build()
                 )
                 .build()
@@ -198,10 +219,10 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
             ?: return@HttpHandler HttpResponse.plainText("Missing 'session_id' parameter", HttpStatus.BadRequest)
 
         // Look up org via EventWithTickets
-        val event = Server.database().collection<EventWithTickets>().get(eventId)
+        val event = Server.events.info.table().get(eventId)
             ?: return@HttpHandler HttpResponse.plainText("Event not found", HttpStatus.NotFound)
 
-        val config = Server.database().collection<StripeConfig>()
+        val config = Server.stripeConfig.info.table()
             .find(condition { it.organizationId eq event.organizationId }).firstOrNull()
             ?: return@HttpHandler HttpResponse.plainText(
                 "No Stripe configuration found",
@@ -247,7 +268,7 @@ object CheckoutBridgeEndpoint : ServerBuilder() {
                 body {
                     div("card") {
                         h1 { +"Thank You!" }
-                        p { +"Your purchase is complete. Your receipt will be emailed to you shortly. You will receive a QR code for tickets closer to the event." }
+                        p { +"Your purchase is complete. Your receipt and ticket will be emailed to you shortly." }
                     }
                 }
             }

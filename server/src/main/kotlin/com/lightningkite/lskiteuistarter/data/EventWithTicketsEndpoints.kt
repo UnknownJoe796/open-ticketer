@@ -25,7 +25,7 @@ object EventWithTicketsEndpoints : ServerBuilder() {
             val readCondition = if (isSystemAdmin) {
                 Condition.Always
             } else {
-                val adminOrgIds = Server.database().collection<OrganizationMembership>()
+                val adminOrgIds = Server.memberships.info.table()
                     .find(condition { (it.userId eq auth.id) and (it.role eq OrgRole.Admin) })
                     .toList()
                     .map { it.organizationId }
