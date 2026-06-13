@@ -23,7 +23,10 @@ import com.lightningkite.lightningserver.typed.route
 import com.lightningkite.lskiteuistarter.*
 import com.lightningkite.lskiteuistarter.UserAuth.RoleCache.userRole
 import com.lightningkite.lskiteuistarter.utils.generateAndSendTicket
+import com.lightningkite.lskiteuistarter.utils.generateQRData
+import com.lightningkite.lskiteuistarter.utils.generateQRImage
 import com.lightningkite.lskiteuistarter.utils.ticketEmailHtml
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.database.*
 import kotlin.uuid.Uuid
@@ -99,5 +102,12 @@ object PurchaseEndpoints : ServerBuilder() {
         HttpResponse.html {
             ticketEmailHtml(event, purchase)
         }
+    }
+    val viewTicketQr = path.arg<Uuid>("id").path("view-ticket-qr").get bind HttpHandler {
+        val purchase = info.table(it.access(UserAuth.require())).get(it.path.arg1) ?: throw NotFoundException()
+        val event = Server.events.info.table().get(purchase.eventId)
+        val qrData = generateQRData(purchase)
+        val qrImage = generateQRImage(qrData)
+        HttpResponse(TypedData.bytes(qrImage, MediaType.Image.PNG))
     }
 }

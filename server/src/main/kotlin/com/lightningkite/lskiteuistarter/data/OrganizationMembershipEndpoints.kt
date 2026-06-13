@@ -9,9 +9,9 @@ import com.lightningkite.lightningserver.typed.ApiHttpHandler
 import com.lightningkite.lightningserver.typed.ModelRestEndpoints
 import com.lightningkite.lightningserver.typed.auth
 import com.lightningkite.lightningserver.typed.modelInfo
-import com.lightningkite.EmailAddress
 import com.lightningkite.lskiteuistarter.*
 import com.lightningkite.lskiteuistarter.UserAuth.RoleCache.userRole
+import com.lightningkite.services.data.EmailAddress
 import com.lightningkite.services.database.*
 import kotlinx.coroutines.flow.firstOrNull
 import kotlin.uuid.Uuid

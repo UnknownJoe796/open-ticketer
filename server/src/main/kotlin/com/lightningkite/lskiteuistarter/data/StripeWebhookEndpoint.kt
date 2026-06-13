@@ -8,9 +8,9 @@ import com.lightningkite.lightningserver.http.*
 import com.lightningkite.lightningserver.plainText
 import com.lightningkite.lightningserver.runtime.ServerRuntime
 import com.lightningkite.lskiteuistarter.*
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.database.*
 import com.lightningkite.services.database.table
-import com.lightningkite.toEmailAddress
 import com.stripe.Stripe
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList

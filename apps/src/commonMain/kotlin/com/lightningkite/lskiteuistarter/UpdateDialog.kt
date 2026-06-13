@@ -11,20 +11,20 @@ class UpdateDialog(
     val newVersion: String,
     val forceUpdate: Boolean,
 ) : Page {
-    override fun ViewWriter.render() {
+    override fun ElementWriter.CanAddTheme.render() {
         dismissBackground {
             onClick {
                 if (!forceUpdate)
                     pageNavigator.dismiss()
             }
-            DialogSemantic.onNext.centered.frame {
+            centered.themed(DialogSemantic).frame {
                 col {
                     h1 {
                         align = Align.Center
                         content = "New App Version Available"
                     }
 
-                    sizeConstraints(maxWidth = 40.rem, minWidth = 10.rem).centered.padded.text {
+                    centered.sizeConstraints(maxWidth = 40.rem, minWidth = 10.rem).padded.text {
                         align = Align.Center
                         content =
                             if (forceUpdate)

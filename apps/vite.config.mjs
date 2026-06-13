@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 
 // Read ports from environment or use defaults
 const frontendPort = parseInt(process.env.FRONTEND_PORT || '8941')
-const backendPort = parseInt(process.env.BACKEND_PORT || '8081')
+const backendPort = parseInt(process.env.BACKEND_PORT || '8080')
 
 export default defineConfig({
     root: "kotlin",

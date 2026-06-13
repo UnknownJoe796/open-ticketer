@@ -7,8 +7,7 @@ import com.lightningkite.kiteui.models.SizeConstraints
 import com.lightningkite.kiteui.models.rem
 import com.lightningkite.kiteui.navigation.Page
 import com.lightningkite.kiteui.navigation.pageNavigator
-import com.lightningkite.kiteui.views.ViewWriter
-import com.lightningkite.kiteui.views.centered
+import com.lightningkite.kiteui.views.*
 import com.lightningkite.kiteui.views.direct.*
 import com.lightningkite.lightningserver.auth.AuthEndpoints
 import com.lightningkite.lskiteuistarter.sdk.*
@@ -18,7 +17,7 @@ import com.lightningkite.reactive.core.*
 class LoginPage : Page, UseFullPage {
     override val title: Reactive<String> get() = Constant("Login")
 
-    override fun ViewWriter.render() {
+    override fun ElementWriter.CanAddTheme.render() {
         val api = selectedApi.value.api
 
         frame {

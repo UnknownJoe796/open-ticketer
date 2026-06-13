@@ -1,7 +1,8 @@
-// by Claude - Purchase details screen showing ticket info and redemption history
+// Purchase details screen showing ticket info and redemption history
 package com.lightningkite.lskiteuistarter
 
 import com.lightningkite.kiteui.Routable
+import com.lightningkite.kiteui.exceptions.PlainTextException
 import com.lightningkite.kiteui.models.*
 import com.lightningkite.kiteui.navigation.Page
 import com.lightningkite.kiteui.navigation.pageNavigator
@@ -10,167 +11,130 @@ import com.lightningkite.kiteui.views.*
 import com.lightningkite.kiteui.views.direct.*
 import com.lightningkite.kiteui.views.l2.field
 import com.lightningkite.lskiteuistarter.sdk.currentSession
+import com.lightningkite.lskiteuistarter.sdk.currentSessionNotNull
+import com.lightningkite.reactive.context.await
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.context.reactive
-import com.lightningkite.reactive.context.reactiveSuspending
 import com.lightningkite.reactive.core.*
 import com.lightningkite.services.database.*
-import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 
 @Routable("/purchase/{purchaseId}")
 class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
     override val title: Reactive<String> get() = Constant("Purchase Details")
 
-    override fun ViewWriter.render() {
-        val purchase = Signal<Purchase?>(null)
-        val eventName = Signal("") // by Claude - look up event name
-        val redemptions = Signal<List<TicketRedemption>>(emptyList())
-        val isLoading = Signal(true)
-        val errorMessage = Signal<String?>(null)
-
+    override fun ElementWriter.CanAddTheme.render() {
         reactive {
             if (currentSession() == null)
                 pageNavigator.reset(LandingPage())
         }
 
-        // Load purchase and redemptions
-        reactiveSuspending {
-            val session = currentSession() ?: return@reactiveSuspending
-            val api = session.api
-
-            try {
-                // Get purchase
-                val p = api.purchase.detail(purchaseId)
-                purchase.value = p
-
-                // by Claude - look up event name
-                try {
-                    eventName.value = api.eventWithTickets.detail(p.eventId).name
-                } catch (_: Exception) {
-                    eventName.value = "Unknown Event"
-                }
-
-                // Get redemptions
-                redemptions.value = api.ticketRedemption.query(
-                    Query(condition { it.purchaseId.eq(purchaseId) })
-                )
-            } catch (e: Exception) {
-                errorMessage.value = e.message ?: "Failed to load purchase"
-            } finally {
-                isLoading.value = false
-            }
+        val purchase = remember { currentSessionNotNull().purchases[purchaseId]() }
+        val eventName = remember {
+            val p = purchase() ?: return@remember ""
+            currentSessionNotNull().eventWithTickets[p.eventId]()?.name ?: "Unknown Event"
         }
+        val redemptions = remember {
+            currentSessionNotNull().ticketRedemptions.list(
+                Query(condition { it.purchaseId.eq(purchaseId) })
+            )()
+        }
+        val sortedRedemptions = remember { redemptions().sortedByDescending { it.scannedAt } }
+        val totalRedeemed = remember { redemptions().sumOf { it.quantityRedeemed } }
+        val remaining = remember { (purchase()?.quantity ?: 0) - totalRedeemed() }
 
         col {
-            // Header
             row {
                 button {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Purchase Details")
+                centered.expanding.h2("Purchase Details")
                 space()
             }
 
-            // Loading
-            shownWhen { isLoading() }.centered.activityIndicator()
+            expanding.shownWhen { purchase() != null }.scrolling.col {
+                // Purchase info
+                card.col {
+                    h3 { ::content { eventName() } }
 
-            // Error
-            shownWhen { errorMessage() != null }.card.danger.col {
-                reactive { text(errorMessage() ?: "") }
-            }
+                    separator()
 
-            // Content
-            shownWhen { !isLoading() && purchase() != null }.expanding.scrolling.col {
-                reactive {
-                    val p = purchase() ?: return@reactive
-                    val r = redemptions()
-                    val totalRedeemed = r.sumOf { it.quantityRedeemed }
-                    val remaining = p.quantity - totalRedeemed
-
-                    // Purchase info card — by Claude: use looked-up event name
-                    card.col {
-                        h3(eventName())
-
-                        separator()
-
-                        row {
-                            bold.text("Customer:")
-                            expanding.text(p.customerName ?: "N/A")
-                        }
-                        row {
-                            bold.text("Email:")
-                            expanding.text(p.customerEmail.toString())
-                        }
-                        row {
-                            bold.text("Purchased:")
-                            expanding.text(p.purchasedAt.toString())
-                        }
-                        row {
-                            bold.text("Amount:")
-                            expanding.text("$${p.amountTotal / 100.0} ${p.currency.uppercase()}")
-                        }
-
-                        separator()
-
-                        row {
-                            bold.text("Quantity:")
-                            expanding.text(p.quantity.toString())
-                        }
-                        row {
-                            bold.text("Redeemed:")
-                            expanding.text(totalRedeemed.toString())
-                        }
-                        row {
-                            bold.text("Remaining:")
-                            if (remaining > 0) {
-                                affirmative.text(remaining.toString())
-                            } else {
-                                danger.text("0")
+                    row {
+                        bold.text("Customer:")
+                        expanding.text { ::content { purchase()?.customerName ?: "N/A" } }
+                    }
+                    row {
+                        bold.text("Email:")
+                        expanding.text { ::content { purchase()?.customerEmail?.toString() ?: "" } }
+                    }
+                    row {
+                        bold.text("Purchased:")
+                        expanding.text { ::content { purchase()?.purchasedAt?.toString() ?: "" } }
+                    }
+                    row {
+                        bold.text("Amount:")
+                        expanding.text {
+                            ::content {
+                                purchase()?.let { "$${it.amountTotal / 100.0} ${it.currency.uppercase()}" } ?: ""
                             }
                         }
                     }
 
-                    // Redemption history
-                    card.col {
-                        h4("Check-in History")
+                    separator()
 
-                        if (r.isEmpty()) {
-                            centered.text("No check-ins yet")
-                        } else {
-                            r.sortedByDescending { it.scannedAt }.forEach { redemption ->
-                                separator()
-                                row {
-                                    col {
-                                        bold.text("${redemption.quantityRedeemed}x checked in")
-                                        text("by ${redemption.scannedByName}")
-                                        if (!redemption.notes.isNullOrBlank()) {
-                                            text("Note: ${redemption.notes}")
-                                        }
-                                    }
-                                    expanding.space()
-                                    text(redemption.scannedAt.toString())
+                    row {
+                        bold.text("Quantity:")
+                        expanding.text { ::content { purchase()?.quantity?.toString() ?: "" } }
+                    }
+                    row {
+                        bold.text("Redeemed:")
+                        expanding.text { ::content { totalRedeemed().toString() } }
+                    }
+                    row {
+                        bold.text("Remaining:")
+                        shownWhen { remaining() > 0 }.affirmative.text { ::content { remaining().toString() } }
+                        shownWhen { remaining() <= 0 }.danger.text("0")
+                    }
+                }
+
+                // Redemption history
+                card.col {
+                    h4("Check-in History")
+
+                    centered.shownWhen { redemptions().isEmpty() }.text("No check-ins yet")
+
+                    forEach(sortedRedemptions) { redemption ->
+                        separator()
+                        row {
+                            col {
+                                bold.text("${redemption.quantityRedeemed}x checked in")
+                                text("by ${redemption.scannedByName}")
+                                if (!redemption.notes.isNullOrBlank()) {
+                                    text("Note: ${redemption.notes}")
                                 }
                             }
+                            expanding.space()
+                            text(redemption.scannedAt.toString())
                         }
                     }
+                }
 
-                    // Check-in button (if remaining) — by Claude: pass eventId
-                    if (remaining > 0) {
-                        separator()
-                        important.buttonTheme.button {
-                            centered.text("Check In")
-                            onClick {
-                                pageNavigator.navigate(
-                                    CheckInPage(
-                                        purchaseId = p._id,
-                                        organizationId = p.organizationId,
-                                        eventId = p.eventId,
-                                        quantity = 1
-                                    )
+                // Check-in button (only when tickets remain)
+                shownWhen { remaining() > 0 }.col {
+                    separator()
+                    important.button {
+                        centered.text("Check In")
+                        onClick {
+                            val p = purchase.await() ?: return@onClick
+                            pageNavigator.navigate(
+                                CheckInPage(
+                                    purchaseId = p._id,
+                                    organizationId = p.organizationId,
+                                    eventId = p.eventId,
+                                    quantity = 1
                                 )
-                            }
+                            )
                         }
                     }
                 }
@@ -179,7 +143,6 @@ class PurchaseDetailsPage(val purchaseId: Uuid) : Page {
     }
 }
 
-// by Claude - added eventId parameter
 @Routable("/checkin/{purchaseId}/{organizationId}/{eventId}/{quantity}")
 class CheckInPage(
     val purchaseId: Uuid,
@@ -189,10 +152,8 @@ class CheckInPage(
 ) : Page {
     override val title: Reactive<String> get() = Constant("Check In")
 
-    override fun ViewWriter.render() {
-        val isLoading = Signal(false)
+    override fun ElementWriter.CanAddTheme.render() {
         val isSuccess = Signal(false)
-        val errorMessage = Signal<String?>(null)
         val notes = Signal("")
 
         reactive {
@@ -201,17 +162,16 @@ class CheckInPage(
         }
 
         col {
-            // Header
             row {
                 button {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Confirm Check-In")
+                centered.expanding.h2("Confirm Check-In")
                 space()
             }
 
-            expanding.centered.col {
+            centered.expanding.col {
                 shownWhen { !isSuccess() }.col {
                     card.col {
                         centered.h3("Check in $quantity ticket(s)?")
@@ -221,6 +181,7 @@ class CheckInPage(
                         field("Notes (optional)") {
                             textArea {
                                 hint = "Add any notes..."
+                                keyboardHints = KeyboardHints.paragraph
                                 content bind notes
                             }
                         }
@@ -228,59 +189,35 @@ class CheckInPage(
 
                     separator()
 
-                    shownWhen { errorMessage() != null }.card.danger.col {
-                        reactive { text(errorMessage() ?: "") }
+                    important.button {
+                        centered.text("Confirm Check-In")
+                        action = Action("Confirm Check-In") {
+                            val session = currentSession.await() ?: throw PlainTextException("Not logged in")
+                            val user = session.api.userAuth.getSelf()
+
+                            session.ticketRedemptions.add(
+                                TicketRedemption(
+                                    eventId = eventId,
+                                    purchaseId = purchaseId,
+                                    quantityRedeemed = quantity,
+                                    scannedByUserId = session.userId,
+                                    scannedByName = user.name ?: "Unknown",
+                                    notes = notes.value.takeIf { it.isNotBlank() }
+                                )
+                            )
+
+                            isSuccess.value = true
+                        }
                     }
 
-                    shownWhen { isLoading() }.centered.activityIndicator()
-
-                    shownWhen { !isLoading() }.col {
-                        important.buttonTheme.button {
-                            centered.text("Confirm Check-In")
-                            onClick {
-                                val currentNotes = notes.value.takeIf { it.isNotBlank() }
-
-                                isLoading.value = true
-                                errorMessage.value = null
-
-                                AppScope.launch {
-                                    try {
-                                        val session = currentSession() ?: throw Exception("Not logged in")
-                                        val api = session.api
-                                        val user = api.userAuth.getSelf()
-
-                                        // Create redemption — by Claude: include eventId
-                                        api.ticketRedemption.insert(
-                                            TicketRedemption(
-                                                eventId = eventId,
-                                                purchaseId = purchaseId,
-                                                quantityRedeemed = quantity,
-                                                scannedByUserId = session.userId,
-                                                scannedByName = user.name ?: "Unknown",
-                                                notes = currentNotes
-                                            )
-                                        )
-
-                                        isSuccess.value = true
-                                    } catch (e: Exception) {
-                                        errorMessage.value = e.message ?: "Failed to check in"
-                                    } finally {
-                                        isLoading.value = false
-                                    }
-                                }
-                            }
-                        }
-
-                        button {
-                            centered.text("Cancel")
-                            onClick { pageNavigator.goBack() }
-                        }
+                    button {
+                        centered.text("Cancel")
+                        onClick { pageNavigator.goBack() }
                     }
                 }
 
-                // Success state
                 shownWhen { isSuccess() }.card.col {
-                    affirmative.centered.h2("Check-In Complete!")
+                    centered.affirmative.h2("Check-In Complete!")
                     centered.text("$quantity ticket(s) checked in successfully")
 
                     separator()

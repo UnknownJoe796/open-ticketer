@@ -1,9 +1,9 @@
 package com.lightningkite.lskiteuistarter.utils
 
-import com.lightningkite.MediaType
 import com.lightningkite.lightningserver.files.fileObject
 import com.lightningkite.lightningserver.runtime.ServerRuntime
 import com.lightningkite.lskiteuistarter.*
+import com.lightningkite.services.data.MediaType
 import com.lightningkite.services.data.TypedData
 import com.lightningkite.services.database.*
 import com.lightningkite.services.email.Email

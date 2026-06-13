@@ -1,7 +1,8 @@
-// by Claude - Event management screens for listing and creating events
+// Event management screens for listing and creating events
 package com.lightningkite.lskiteuistarter
 
 import com.lightningkite.kiteui.Routable
+import com.lightningkite.kiteui.exceptions.PlainTextException
 import com.lightningkite.kiteui.models.*
 import com.lightningkite.kiteui.navigation.Page
 import com.lightningkite.kiteui.navigation.pageNavigator
@@ -10,88 +11,60 @@ import com.lightningkite.kiteui.views.*
 import com.lightningkite.kiteui.views.direct.*
 import com.lightningkite.kiteui.views.l2.field
 import com.lightningkite.lskiteuistarter.sdk.currentSession
+import com.lightningkite.lskiteuistarter.sdk.currentSessionNotNull
+import com.lightningkite.reactive.context.await
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.context.reactive
-import com.lightningkite.reactive.context.reactiveSuspending
 import com.lightningkite.reactive.core.*
 import com.lightningkite.services.database.*
-import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 
-// by Claude - list events for an organization
+// List events for an organization
 @Routable("/organization/{organizationId}/events")
 class EventsListPage(val organizationId: Uuid) : Page {
     override val title: Reactive<String> get() = Constant("Events")
 
-    override fun ViewWriter.render() {
-        val events = Signal<List<EventWithTickets>>(emptyList())
-        val isLoading = Signal(true)
-        val errorMessage = Signal<String?>(null)
-
+    override fun ElementWriter.CanAddTheme.render() {
         reactive {
             if (currentSession() == null)
                 pageNavigator.reset(LandingPage())
         }
 
-        reactiveSuspending {
-            val session = currentSession() ?: return@reactiveSuspending
-            try {
-                events.value = session.api.eventWithTickets.query(
-                    Query(condition { it.organizationId.eq(organizationId) })
-                )
-            } catch (e: Exception) {
-                errorMessage.value = e.message ?: "Failed to load events"
-            } finally {
-                isLoading.value = false
-            }
+        // ModelCache query: cached, reactive, and shows loading/error states automatically.
+        val events = remember {
+            currentSessionNotNull().eventWithTickets.list(
+                Query(condition { it.organizationId.eq(organizationId) })
+            )()
         }
 
         col {
-            // Header
             row {
                 button {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Events")
+                centered.expanding.h2("Events")
                 button {
                     icon({ Icon.add }, "Create")
                     onClick { pageNavigator.navigate(CreateEventPage(organizationId)) }
                 }
             }
 
-            shownWhen { isLoading() }.centered.activityIndicator()
+            expanding.scrolling.col {
+                centered.shownWhen { events().isEmpty() }.col {
+                    text("No events yet")
+                    button {
+                        text("Create Event")
+                        onClick { pageNavigator.navigate(CreateEventPage(organizationId)) }
+                    }
+                }
 
-            shownWhen { errorMessage() != null }.card.danger.col {
-                reactive { text(errorMessage() ?: "") }
-            }
-
-            shownWhen { !isLoading() }.expanding.scrolling.col {
-                reactive {
-                    val eventList = events()
-                    if (eventList.isEmpty()) {
-                        centered.col {
-                            text("No events yet")
-                            button {
-                                text("Create Event")
-                                onClick { pageNavigator.navigate(CreateEventPage(organizationId)) }
-                            }
-                        }
-                    } else {
-                        eventList.forEach { event ->
-                            card.col {
-                                row {
-                                    expanding.col {
-                                        bold.text(event.name)
-                                        text("Product ID: ${event._id}")
-                                    }
-                                }
-                                separator()
-                                row {
-                                    text("Ticket limit: ${if (event.ticketLimit == Int.MAX_VALUE) "Unlimited" else event.ticketLimit.toString()}")
-                                }
-                            }
-                        }
+                forEach(events) { event ->
+                    card.col {
+                        bold.text(event.name)
+                        subtext("Product ID: ${event._id}")
+                        separator()
+                        text("Ticket limit: ${if (event.ticketLimit == Int.MAX_VALUE) "Unlimited" else event.ticketLimit.toString()}")
                     }
                 }
             }
@@ -99,17 +72,15 @@ class EventsListPage(val organizationId: Uuid) : Page {
     }
 }
 
-// by Claude - create a new event linked to a Stripe product
+// Create a new event linked to a Stripe product
 @Routable("/organization/{organizationId}/events/create")
 class CreateEventPage(val organizationId: Uuid) : Page {
     override val title: Reactive<String> get() = Constant("Create Event")
 
-    override fun ViewWriter.render() {
+    override fun ElementWriter.CanAddTheme.render() {
         val stripeProductId = Signal("")
         val name = Signal("")
         val ticketLimit = Signal("")
-        val isLoading = Signal(false)
-        val errorMessage = Signal<String?>(null)
 
         reactive {
             if (currentSession() == null)
@@ -122,15 +93,16 @@ class CreateEventPage(val organizationId: Uuid) : Page {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Create Event")
+                centered.expanding.h2("Create Event")
                 space()
             }
 
-            expanding.centered.sizedBox(SizeConstraints(maxWidth = 30.rem)).scrolling.col {
+            centered.expanding.sizedBox(SizeConstraints(maxWidth = 30.rem)).scrolling.col {
                 card.col {
                     field("Stripe Product ID") {
                         textInput {
                             hint = "prod_..."
+                            keyboardHints = KeyboardHints.id
                             content bind stripeProductId
                         }
                     }
@@ -138,6 +110,7 @@ class CreateEventPage(val organizationId: Uuid) : Page {
                     field("Event Name") {
                         textInput {
                             hint = "My Event"
+                            keyboardHints = KeyboardHints.title
                             content bind name
                         }
                     }
@@ -145,47 +118,33 @@ class CreateEventPage(val organizationId: Uuid) : Page {
                     field("Ticket Limit (leave blank for unlimited)") {
                         textInput {
                             hint = "e.g. 500"
+                            keyboardHints = KeyboardHints.integer
                             content bind ticketLimit
                         }
                     }
                 }
 
-                shownWhen { errorMessage() != null }.card.danger.col {
-                    reactive { text(errorMessage() ?: "") }
-                }
-
-                shownWhen { isLoading() }.centered.activityIndicator()
-
-                shownWhen { !isLoading() }.important.buttonTheme.button {
+                important.button {
                     centered.text("Create Event")
-                    onClick {
-                        val currentProductId = stripeProductId.value.trim()
-                        val currentName = name.value.trim()
-                        if (currentProductId.isBlank() || currentName.isBlank()) return@onClick
+                    // Action handles loading state and surfaces errors automatically.
+                    action = Action("Create Event") {
+                        val productId = stripeProductId.value.trim()
+                        val eventName = name.value.trim()
+                        if (productId.isBlank() || eventName.isBlank())
+                            throw PlainTextException("Please enter both a Stripe product ID and an event name.")
 
                         val limit = ticketLimit.value.trim().toIntOrNull() ?: Int.MAX_VALUE
+                        val session = currentSession.await() ?: throw PlainTextException("Not logged in")
 
-                        isLoading.value = true
-                        errorMessage.value = null
-
-                        AppScope.launch {
-                            try {
-                                val session = currentSession() ?: throw Exception("Not logged in")
-                                session.api.eventWithTickets.insert(
-                                    EventWithTickets(
-                                        _id = currentProductId,
-                                        organizationId = organizationId,
-                                        name = currentName,
-                                        ticketLimit = limit,
-                                    )
-                                )
-                                pageNavigator.goBack()
-                            } catch (e: Exception) {
-                                errorMessage.value = e.message ?: "Failed to create event"
-                            } finally {
-                                isLoading.value = false
-                            }
-                        }
+                        session.eventWithTickets.add(
+                            EventWithTickets(
+                                _id = productId,
+                                organizationId = organizationId,
+                                name = eventName,
+                                ticketLimit = limit,
+                            )
+                        )
+                        pageNavigator.goBack()
                     }
                 }
 

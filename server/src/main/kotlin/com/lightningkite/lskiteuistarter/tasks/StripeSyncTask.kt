@@ -7,8 +7,8 @@ import com.lightningkite.lightningserver.definition.secretBasis
 import com.lightningkite.lightningserver.encryption.cipher
 import com.lightningkite.lskiteuistarter.data.options
 import com.lightningkite.lskiteuistarter.*
+import com.lightningkite.services.data.toEmailAddress
 import com.lightningkite.services.database.*
-import com.lightningkite.toEmailAddress
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
 import com.stripe.Stripe

@@ -1,7 +1,6 @@
 package com.lightningkite.lskiteuistarter
 
 import com.lightningkite.kiteui.*
-import com.lightningkite.kiteui.exceptions.ExceptionToMessages
 import com.lightningkite.kiteui.exceptions.installLsError
 import com.lightningkite.kiteui.models.*
 import com.lightningkite.kiteui.navigation.PageNavigator
@@ -31,9 +30,12 @@ val setFcmToken =
 var appUpdateChecked = false
 
 fun ViewWriter.app(navigator: PageNavigator, dialog: PageNavigator) {
-    ExceptionToMessages.root.installLsError()
-    ExceptionToMessages.root.installLoggedOutErrors()
+    // KUI 8: exception handlers live on the ElementContext tree (context.exceptionHandlers)
+    // rather than a global ExceptionToMessages.root.
+    context.exceptionHandlers.installLsError()
+    context.exceptionHandlers.installLoggedOutErrors()
 
+    val elementContext = context
     AppScope.reactiveSuspending {
         if (currentSession() == null) return@reactiveSuspending
         val permission = notificationPermissions()
@@ -45,7 +47,7 @@ fun ViewWriter.app(navigator: PageNavigator, dialog: PageNavigator) {
             }
 
             null -> {
-                confirmDanger(
+                elementContext.confirmDanger(
                     "Send notifications?",
                     "LS KiteUI Starter would like to send you notifications.",
                     "Allow"

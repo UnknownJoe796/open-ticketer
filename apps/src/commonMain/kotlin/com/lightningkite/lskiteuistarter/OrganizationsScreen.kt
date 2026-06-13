@@ -1,7 +1,8 @@
-// by Claude - Organization management screens
+// Organization management screens
 package com.lightningkite.lskiteuistarter
 
 import com.lightningkite.kiteui.Routable
+import com.lightningkite.kiteui.exceptions.PlainTextException
 import com.lightningkite.kiteui.models.*
 import com.lightningkite.kiteui.navigation.Page
 import com.lightningkite.kiteui.navigation.pageNavigator
@@ -9,118 +10,87 @@ import com.lightningkite.kiteui.reactive.*
 import com.lightningkite.kiteui.views.*
 import com.lightningkite.kiteui.views.direct.*
 import com.lightningkite.kiteui.views.l2.field
+import com.lightningkite.kiteui.views.l2.toast
 import com.lightningkite.lskiteuistarter.data.AddMemberInput
 import com.lightningkite.lskiteuistarter.data.SetStripeKeyInput
 import com.lightningkite.lskiteuistarter.sdk.currentSession
+import com.lightningkite.lskiteuistarter.sdk.currentSessionNotNull
+import com.lightningkite.reactive.context.await
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.context.reactive
-import com.lightningkite.reactive.context.reactiveSuspending
 import com.lightningkite.reactive.core.*
 import com.lightningkite.services.database.*
-import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 
 @Routable("/organizations")
 class OrganizationsPage : Page {
     override val title: Reactive<String> get() = Constant("Organizations")
 
-    override fun ViewWriter.render() {
-        val organizations = Signal<List<Organization>>(emptyList())
-        val memberships = Signal<List<OrganizationMembership>>(emptyList())
-        val isLoading = Signal(true)
-
+    override fun ElementWriter.CanAddTheme.render() {
         reactive {
             if (currentSession() == null)
                 pageNavigator.reset(LandingPage())
         }
 
-        // Load organizations - use reactiveSuspending to access reactive values
-        reactiveSuspending {
-            val session = currentSession() ?: return@reactiveSuspending
-            val api = session.api
-            val userId = session.userId
-
-            try {
-                // Get user's memberships
-                memberships.value = api.organizationMembership.query(
-                    Query(condition { it.userId.eq(userId) })
-                )
-
-                // Get all organizations
-                organizations.value = api.organization.query(Query())
-            } catch (e: Exception) {
-                // Handle error
-            } finally {
-                isLoading.value = false
-            }
+        val memberships = remember {
+            val s = currentSessionNotNull()
+            s.organizationMemberships.list(Query(condition { it.userId.eq(s.userId) }))()
+        }
+        // Server-side permissions restrict this to organizations the user may read.
+        val organizations = remember {
+            currentSessionNotNull().organizations.list(Query())()
+        }
+        // Pair each organization with the user's membership (if any) in one reactive pass.
+        val orgRows = remember {
+            val mems = memberships()
+            organizations().map { org -> org to mems.find { it.organizationId == org._id } }
         }
 
         col {
-            // Header
             row {
                 button {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.navigate(HomePage()) }
                 }
-                expanding.centered.h2("Organizations")
+                centered.expanding.h2("Organizations")
                 button {
                     icon({ Icon.add }, "Create")
                     onClick { pageNavigator.navigate(CreateOrganizationPage()) }
                 }
             }
 
-            // Loading
-            shownWhen { isLoading() }.centered.activityIndicator()
+            expanding.scrolling.col {
+                centered.shownWhen { organizations().isEmpty() }.col {
+                    text("No organizations yet")
+                    button {
+                        text("Create Organization")
+                        onClick { pageNavigator.navigate(CreateOrganizationPage()) }
+                    }
+                }
 
-            // Organization list
-            shownWhen { !isLoading() }.expanding.scrolling.col {
-                reactive {
-                    val orgs = organizations()
-                    val mems = memberships()
-
-                    if (orgs.isEmpty()) {
-                        centered.col {
-                            text("No organizations yet")
-                            button {
-                                text("Create Organization")
-                                onClick { pageNavigator.navigate(CreateOrganizationPage()) }
+                forEach(orgRows) { (org, membership) ->
+                    card.col {
+                        row {
+                            expanding.col {
+                                bold.text(org.name)
+                                if (membership != null) text("Role: ${membership.role.name}")
                             }
+                            if (!org.active) danger.text("Inactive")
                         }
-                    } else {
-                        orgs.forEach { org ->
-                            val membership = mems.find { it.organizationId == org._id }
-                            val isAdmin = membership?.role == OrgRole.Admin
 
-                            card.col {
-                                row {
-                                    expanding.col {
-                                        bold.text(org.name)
-                                        if (membership != null) {
-                                            text("Role: ${membership.role.name}")
-                                        }
-                                    }
-                                    if (!org.active) {
-                                        danger.text("Inactive")
-                                    }
+                        separator()
+
+                        row {
+                            if (membership != null) {
+                                important.button {
+                                    text("Scan Tickets")
+                                    onClick { pageNavigator.navigate(ScannerPage(org._id)) }
                                 }
-
-                                separator()
-
-                                // Action buttons
-                                row {
-                                    if (membership != null) {
-                                        important.buttonTheme.button {
-                                            text("Scan Tickets")
-                                            onClick { pageNavigator.navigate(ScannerPage(org._id)) }
-                                        }
-                                    }
-
-                                    if (isAdmin) {
-                                        button {
-                                            text("Manage")
-                                            onClick { pageNavigator.navigate(OrganizationDetailsPage(org._id)) }
-                                        }
-                                    }
+                            }
+                            if (membership?.role == OrgRole.Admin) {
+                                button {
+                                    text("Manage")
+                                    onClick { pageNavigator.navigate(OrganizationDetailsPage(org._id)) }
                                 }
                             }
                         }
@@ -135,64 +105,38 @@ class OrganizationsPage : Page {
 class OrganizationDetailsPage(val organizationId: Uuid) : Page {
     override val title: Reactive<String> get() = Constant("Organization Details")
 
-    override fun ViewWriter.render() {
-        val organization = Signal<Organization?>(null)
-        val members = Signal<List<OrganizationMembership>>(emptyList())
-        val users = Signal<Map<Uuid, User>>(emptyMap())
-        val isLoading = Signal(true)
-
+    override fun ElementWriter.CanAddTheme.render() {
         reactive {
             if (currentSession() == null)
                 pageNavigator.reset(LandingPage())
         }
 
-        // Load data
-        reactiveSuspending {
-            val session = currentSession() ?: return@reactiveSuspending
-            val api = session.api
-
-            try {
-                organization.value = api.organization.detail(organizationId)
-
-                val mems = api.organizationMembership.query(
-                    Query(condition { it.organizationId.eq(organizationId) })
-                )
-                members.value = mems
-
-                // Load user info for members
-                val userMap = mutableMapOf<Uuid, User>()
-                mems.forEach { m ->
-                    try {
-                        userMap[m.userId] = api.user.detail(m.userId)
-                    } catch (_: Exception) {}
-                }
-                users.value = userMap
-            } catch (e: Exception) {
-                // Handle error
-            } finally {
-                isLoading.value = false
-            }
+        val members = remember {
+            currentSessionNotNull().organizationMemberships.list(
+                Query(condition { it.organizationId.eq(organizationId) })
+            )()
+        }
+        // Look up each member's user via the cache (requests are batched into one query).
+        val memberRows = remember {
+            val s = currentSessionNotNull()
+            members().map { m -> m to s.users[m.userId]() }
         }
 
         col {
-            // Header
             row {
                 button {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Organization Details")
+                centered.expanding.h2("Organization Details")
                 space()
             }
 
-            shownWhen { isLoading() }.centered.activityIndicator()
-
-            shownWhen { !isLoading() }.expanding.scrolling.col {
-                // Quick actions
+            expanding.scrolling.col {
                 card.col {
                     h4("Quick Actions")
                     row {
-                        important.buttonTheme.button {
+                        important.button {
                             text("Scan Tickets")
                             onClick { pageNavigator.navigate(ScannerPage(organizationId)) }
                         }
@@ -207,7 +151,6 @@ class OrganizationDetailsPage(val organizationId: Uuid) : Page {
                     }
                 }
 
-                // Members section - by Claude
                 card.col {
                     row {
                         expanding.h4("Members")
@@ -217,27 +160,14 @@ class OrganizationDetailsPage(val organizationId: Uuid) : Page {
                         }
                     }
 
-                    // by Claude - Members list with swapView for empty state
-                    swapView {
-                        swapping(current = { if (members().isEmpty()) "empty" else "list" }) { mode ->
-                            when (mode) {
-                                "empty" -> text("No members")
-                                "list" -> col {
-                                    reactive {
-                                        clearChildren()
-                                        val memberList = members()
-                                        val userMap = users()
-                                        memberList.forEach { member ->
-                                            separator()
-                                            row {
-                                                expanding.col {
-                                                    text(userMap[member.userId]?.name ?: userMap[member.userId]?.email?.toString() ?: "Unknown")
-                                                    text("Role: ${member.role.name}")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                    shownWhen { members().isEmpty() }.text("No members")
+
+                    forEach(memberRows) { (member, user) ->
+                        separator()
+                        row {
+                            expanding.col {
+                                text(user?.name ?: user?.email?.toString() ?: "Unknown")
+                                text("Role: ${member.role.name}")
                             }
                         }
                     }
@@ -251,10 +181,8 @@ class OrganizationDetailsPage(val organizationId: Uuid) : Page {
 class CreateOrganizationPage : Page {
     override val title: Reactive<String> get() = Constant("Create Organization")
 
-    override fun ViewWriter.render() {
+    override fun ElementWriter.CanAddTheme.render() {
         val name = Signal("")
-        val isLoading = Signal(false)
-        val errorMessage = Signal<String?>(null)
 
         reactive {
             if (currentSession() == null)
@@ -267,62 +195,39 @@ class CreateOrganizationPage : Page {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Create Organization")
+                centered.expanding.h2("Create Organization")
                 space()
             }
 
-            expanding.centered.sizedBox(SizeConstraints(maxWidth = 30.rem)).col {
+            centered.expanding.sizedBox(SizeConstraints(maxWidth = 30.rem)).col {
                 card.col {
                     field("Organization Name") {
                         textInput {
                             hint = "Enter organization name"
+                            keyboardHints = KeyboardHints.title
                             content bind name
                         }
                     }
                 }
 
-                shownWhen { errorMessage() != null }.danger.col {
-                    reactive { text(errorMessage() ?: "") }
-                }
-
-                shownWhen { isLoading() }.centered.activityIndicator()
-
-                shownWhen { !isLoading() }.important.buttonTheme.button {
+                important.button {
                     centered.text("Create Organization")
-                    onClick {
-                        val currentName = name.value
-                        if (currentName.isBlank()) return@onClick
+                    action = Action("Create Organization") {
+                        val orgName = name.value.trim()
+                        if (orgName.isBlank()) throw PlainTextException("Please enter an organization name.")
 
-                        isLoading.value = true
-                        errorMessage.value = null
+                        val session = currentSession.await() ?: throw PlainTextException("Not logged in")
 
-                        AppScope.launch {
-                            try {
-                                val session = currentSession() ?: throw Exception("Not logged in")
-                                val api = session.api
-                                val userId = session.userId
+                        val org = session.organizations.add(Organization(name = orgName))
+                        session.organizationMemberships.add(
+                            OrganizationMembership(
+                                organizationId = org._id,
+                                userId = session.userId,
+                                role = OrgRole.Admin
+                            )
+                        )
 
-                                // Create organization
-                                val org = api.organization.insert(
-                                    Organization(name = currentName)
-                                )
-
-                                // Add creator as admin
-                                api.organizationMembership.insert(
-                                    OrganizationMembership(
-                                        organizationId = org._id,
-                                        userId = userId,
-                                        role = OrgRole.Admin
-                                    )
-                                )
-
-                                pageNavigator.navigate(OrganizationDetailsPage(org._id))
-                            } catch (e: Exception) {
-                                errorMessage.value = e.message ?: "Failed to create organization"
-                            } finally {
-                                isLoading.value = false
-                            }
-                        }
+                        pageNavigator.navigate(OrganizationDetailsPage(org._id))
                     }
                 }
             }
@@ -334,11 +239,9 @@ class CreateOrganizationPage : Page {
 class AddMemberPage(val organizationId: Uuid) : Page {
     override val title: Reactive<String> get() = Constant("Add Member")
 
-    override fun ViewWriter.render() {
+    override fun ElementWriter.CanAddTheme.render() {
         val email = Signal("")
         val role = Signal(OrgRole.Scanner)
-        val isLoading = Signal(false)
-        val errorMessage = Signal<String?>(null)
 
         reactive {
             if (currentSession() == null)
@@ -351,62 +254,43 @@ class AddMemberPage(val organizationId: Uuid) : Page {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Add Member")
+                centered.expanding.h2("Add Member")
                 space()
             }
 
-            expanding.centered.sizedBox(SizeConstraints(maxWidth = 30.rem)).col {
+            centered.expanding.sizedBox(SizeConstraints(maxWidth = 30.rem)).col {
                 card.col {
                     field("User Email") {
                         textInput {
                             hint = "user@example.com"
+                            keyboardHints = KeyboardHints.email
                             content bind email
                         }
                     }
 
                     field("Role") {
                         select {
-                            bind(role, OrgRole.entries.toList().let(::Constant)) { it.name }
+                            bind(role, Constant(OrgRole.entries.toList())) { it.name }
                         }
                     }
                 }
 
-                shownWhen { errorMessage() != null }.danger.col {
-                    reactive { text(errorMessage() ?: "") }
-                }
-
-                shownWhen { isLoading() }.centered.activityIndicator()
-
-                shownWhen { !isLoading() }.important.buttonTheme.button {
+                important.button {
                     centered.text("Add Member")
-                    onClick {
-                        val currentEmail = email.value
-                        val currentRole = role.value
-                        if (currentEmail.isBlank()) return@onClick
+                    action = Action("Add Member") {
+                        val userEmail = email.value.trim()
+                        if (userEmail.isBlank()) throw PlainTextException("Please enter a user email.")
 
-                        isLoading.value = true
-                        errorMessage.value = null
-
-                        AppScope.launch {
-                            try {
-                                val session = currentSession() ?: throw Exception("Not logged in")
-                                val api = session.api
-
-                                api.organizationMembership.addMemberToOrganization(
-                                    AddMemberInput(
-                                        organizationId = organizationId,
-                                        userEmail = currentEmail,
-                                        role = currentRole
-                                    )
-                                )
-
-                                pageNavigator.goBack()
-                            } catch (e: Exception) {
-                                errorMessage.value = e.message ?: "Failed to add member"
-                            } finally {
-                                isLoading.value = false
-                            }
-                        }
+                        val session = currentSession.await() ?: throw PlainTextException("Not logged in")
+                        // Custom endpoint (not CRUD), so call the API directly.
+                        session.api.organizationMembership.addMemberToOrganization(
+                            AddMemberInput(
+                                organizationId = organizationId,
+                                userEmail = userEmail,
+                                role = role.value
+                            )
+                        )
+                        pageNavigator.goBack()
                     }
                 }
             }
@@ -418,12 +302,9 @@ class AddMemberPage(val organizationId: Uuid) : Page {
 class StripeConfigPage(val organizationId: Uuid) : Page {
     override val title: Reactive<String> get() = Constant("Stripe Configuration")
 
-    override fun ViewWriter.render() {
+    override fun ElementWriter.CanAddTheme.render() {
         val apiKey = Signal("")
         val webhookSecret = Signal("")
-        val isLoading = Signal(false)
-        val showSuccess = Signal(false)
-        val errorMessage = Signal<String?>(null)
 
         reactive {
             if (currentSession() == null)
@@ -436,11 +317,11 @@ class StripeConfigPage(val organizationId: Uuid) : Page {
                     icon({ Icon.arrowBack }, "Back")
                     onClick { pageNavigator.goBack() }
                 }
-                expanding.centered.h2("Stripe Configuration")
+                centered.expanding.h2("Stripe Configuration")
                 space()
             }
 
-            expanding.centered.sizedBox(SizeConstraints(maxWidth = 30.rem)).scrolling.col {
+            centered.expanding.sizedBox(SizeConstraints(maxWidth = 30.rem)).scrolling.col {
                 card.col {
                     h4("API Credentials")
                     text("Enter your Stripe API credentials. The API key will be encrypted before storage.")
@@ -450,6 +331,7 @@ class StripeConfigPage(val organizationId: Uuid) : Page {
                     field("Stripe API Key") {
                         textInput {
                             hint = "sk_live_..."
+                            keyboardHints = KeyboardHints.password
                             content bind apiKey
                         }
                     }
@@ -457,54 +339,35 @@ class StripeConfigPage(val organizationId: Uuid) : Page {
                     field("Webhook Secret") {
                         textInput {
                             hint = "whsec_..."
+                            keyboardHints = KeyboardHints.password
                             content bind webhookSecret
                         }
                     }
                 }
 
-                shownWhen { errorMessage() != null }.danger.col {
-                    reactive { text(errorMessage() ?: "") }
-                }
-                shownWhen { showSuccess() }.affirmative.text("Configuration saved successfully!")
-
-                shownWhen { isLoading() }.centered.activityIndicator()
-
-                shownWhen { !isLoading() }.important.buttonTheme.button {
+                important.button {
                     centered.text("Save Configuration")
-                    onClick {
-                        val currentApiKey = apiKey.value
-                        val currentWebhookSecret = webhookSecret.value
-                        if (currentApiKey.isBlank() || currentWebhookSecret.isBlank()) return@onClick
+                    action = Action("Save Configuration") {
+                        val key = apiKey.value.trim()
+                        val secret = webhookSecret.value.trim()
+                        if (key.isBlank() || secret.isBlank())
+                            throw PlainTextException("Please enter both the API key and webhook secret.")
 
-                        isLoading.value = true
-                        errorMessage.value = null
-                        showSuccess.value = false
+                        val session = currentSession.await() ?: throw PlainTextException("Not logged in")
+                        session.api.stripeConfig.setStripeAPIKey(
+                            SetStripeKeyInput(
+                                organizationId = organizationId,
+                                apiKey = key,
+                                webhookSecret = secret
+                            )
+                        )
 
-                        AppScope.launch {
-                            try {
-                                val session = currentSession() ?: throw Exception("Not logged in")
-                                val api = session.api
-
-                                api.stripeConfig.setStripeAPIKey(
-                                    SetStripeKeyInput(
-                                        organizationId = organizationId,
-                                        apiKey = currentApiKey,
-                                        webhookSecret = currentWebhookSecret
-                                    )
-                                )
-
-                                showSuccess.value = true
-                                apiKey.value = "" // Clear sensitive data
-                            } catch (e: Exception) {
-                                errorMessage.value = e.message ?: "Failed to save configuration"
-                            } finally {
-                                isLoading.value = false
-                            }
-                        }
+                        apiKey.value = "" // Clear sensitive data
+                        webhookSecret.value = ""
+                        toast("Configuration saved successfully")
                     }
                 }
 
-                // Help text
                 card.col {
                     h4("Setup Instructions")
                     text("1. Log in to your Stripe dashboard")
